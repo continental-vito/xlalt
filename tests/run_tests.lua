@@ -108,11 +108,17 @@ check("H V V runs paste-values AppleScript",
   lastScript():find("paste special selection what paste values") ~= nil, lastScript())
 check("sequence mode exits after a hit", ExcelAlt.mode == false)
 
+mock.lastCanvas = nil
 tapOption()
 typeKeys("h")
-check("prefix keeps mode alive with overlay", ExcelAlt.mode and mock.lastCanvas.visible)
+check("⌥ tap + prefix build NO UI inside the callbacks (v12 freeze fix)",
+  mock.lastCanvas == nil)
+mock.flushTimers(0)   -- run only the deferred UI tick
+check("prefix keeps mode alive; overlay renders on the next tick",
+  ExcelAlt.mode and mock.lastCanvas ~= nil and mock.lastCanvas.visible)
 
 typeKeys("q")
+mock.flushTimers(0)
 check("unknown sequence exits with alert", ExcelAlt.mode == false and
   (mock.log.alerts[#mock.log.alerts] or ""):find("No shortcut") ~= nil)
 
@@ -211,6 +217,12 @@ check("store persisted as valid JSON with the custom entry",
 T.opDelete("hzz")
 check("deleting a custom removes it without disabling anything",
   T.exact()["hzz"] == nil and decoded.disabled ~= nil)
+
+-- =====================================================================
+print("\n[7] Deferred-UI invariant (guards the v12 fix)")
+-- =====================================================================
+check("zero canvas/alert/screen calls ever executed inside a tap callback",
+  mock.uiViolations == 0, mock.uiViolations)
 
 -- =====================================================================
 print(string.format("\n%d passed, %d failed\n", passed, failed))

@@ -4,6 +4,10 @@ Tap the Option key in Excel for Mac, then type the Windows sequence you already 
 
 The app is a menu bar utility: no dock icon, corgi app icon, an ⌥-chart glyph in the menu bar. It is built on the Hammerspoon runtime, fully rebranded and self-contained.
 
+## Download (no build needed)
+
+**[⬇ Download XL-App.zip](https://github.com/vitodelcambio/xl/raw/main/download/XL-App.zip)** — unzip, right-click `Install XL.command` → Open. The installer copies the app to /Applications, resets any stale Accessibility grant, signs, and launches. Grant Accessibility to "ExcelAlt" when macOS asks; shortcuts go live automatically a couple of seconds later. (The right-click-open step and the bundled installer exist because the app is ad-hoc signed, not notarized — macOS quarantines direct downloads, and the installer clears that. A bare `.app` download would be blocked by Gatekeeper.)
+
 ## Safety model (read before touching the tap code)
 
 The engine listens to keyboard events through macOS event taps. macOS **holds keyboard delivery for the entire system** while a tap callback runs, which imposes three hard rules, all enforced by tests:

@@ -3,19 +3,20 @@
 --  Standalone engine (runs inside the rebranded ExcelAlt.app)
 --  v11
 --
---  v11 CRITICAL FIX: event taps are now started ONLY while Excel is the
---  frontmost app (via hs.application.watcher) and fully stopped
---  everywhere else. v10 kept the taps running system-wide and called
---  hs.application.frontmostApplication() inside the tap callback — a
---  blocking window-server query executed on EVERY keystroke, which
---  stalled keyboard event delivery across the whole machine.
---  Callbacks are additionally wrapped in pcall so an error can never
---  jam the event chain (macOS holds key delivery until we return).
+--  v11 FIX: event taps run ONLY while Excel is frontmost (app watcher);
+--  no frontmostApplication() query inside tap callbacks.
+--  v12 FIX: tap callbacks are now PURE — they only mutate state and
+--  return immediately. All UI (overlay canvas, alerts) is deferred to
+--  the next runloop tick via hs.timer.doAfter(0, …). v11 still built
+--  and showed the overlay window INSIDE the callback; window creation
+--  while the window server is waiting on the tap can deadlock, so
+--  macOS killed the tap (typing dead in Excel) and the engine's
+--  re-enable restarted the cycle (shortcuts dead too).
 -- =====================================================================
 
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
-  version    = "1.1",
+  version    = "1.2",
   enabled    = true,
   mode       = false,
   seq        = "",
@@ -341,24 +342,45 @@ local function overlayShow()
 end
 
 -- ---------------------------------------------------------------------
+-- Deferred UI: tap callbacks must NEVER touch the window server.
+-- scheduleUI() coalesces overlay updates onto the next runloop tick;
+-- say() defers alerts the same way.
+-- ---------------------------------------------------------------------
+local uiScheduled = false
+local function scheduleUI()
+  if uiScheduled then return end
+  uiScheduled = true
+  hs.timer.doAfter(0, function()
+    uiScheduled = false
+    if ExcelAlt.mode then overlayShow() else overlayHide() end
+  end)
+end
+
+local function say(msg, dur)
+  hs.timer.doAfter(0, function() hs.alert.show(msg, dur) end)
+end
+
+-- ---------------------------------------------------------------------
 -- Sequence mode
 -- ---------------------------------------------------------------------
 local function exitMode()
   ExcelAlt.mode, ExcelAlt.seq = false, ""
-  overlayHide()
+  scheduleUI()
   if ExcelAlt.timeout then ExcelAlt.timeout:stop() ; ExcelAlt.timeout = nil end
 end
 
 local function enterMode()
   ExcelAlt.mode, ExcelAlt.seq = true, ""
-  overlayShow()
+  scheduleUI()
   if ExcelAlt.timeout then ExcelAlt.timeout:stop() end
   ExcelAlt.timeout = hs.timer.doAfter(SEQ_TIMEOUT, exitMode)
 end
 
 -- NOTE: these handlers run while macOS is holding keyboard delivery for
 -- the whole system. They must be fast, allocation-light, and must never
--- make blocking calls (no frontmostApplication, no AppleScript, no I/O).
+-- make blocking calls: no frontmostApplication, no AppleScript, no I/O,
+-- and NO UI — no canvas, no alerts, no window-server calls of any kind.
+-- State only; everything visible happens via scheduleUI()/say().
 local function handleFlags(e)
   if not ExcelAlt.enabled or not ExcelAlt.excelFront then return false end
   local alt = e:getFlags().alt
@@ -392,16 +414,16 @@ local function handleKey(e)
   local hit = exact[ExcelAlt.seq]
   if hit then
     exitMode()
-    hs.alert.show(hit.desc, 0.8)
+    say(hit.desc, 0.8)
     hs.timer.doAfter(0.05, hit.fn)   -- action runs OUTSIDE the tap callback
     return true
   elseif prefixes[ExcelAlt.seq] then
-    overlayShow()
+    scheduleUI()
     return true
   else
     local bad = ExcelAlt.seq:upper()
     exitMode()
-    hs.alert.show("No shortcut:  ⌥ " .. bad, 1)
+    say("No shortcut:  ⌥ " .. bad, 1)
     return true
   end
 end

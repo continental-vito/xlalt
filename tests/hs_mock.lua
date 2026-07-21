@@ -108,22 +108,35 @@ end
 
 -- ------------------------------------------------------------------ timers
 M.timers = {}
-local function newTimer(fn, every)
-  local t = { fn = fn, every = every, stopped = false }
+M.inCallback = false      -- true while a tap callback is executing
+M.uiViolations = 0        -- window-server calls made inside a callback
+local function newTimer(fn, every, delay)
+  local t = { fn = fn, every = every, delay = delay or 0, stopped = false }
   function t:stop() self.stopped = true end
   M.timers[#M.timers + 1] = t
   return t
 end
 
-function M.flushTimers()
-  local pending = M.timers
+-- flushTimers()          runs everything pending
+-- flushTimers(maxDelay)  runs only timers scheduled with delay <= maxDelay
+function M.flushTimers(maxDelay)
+  local pending, keep = M.timers, {}
   M.timers = {}
   for _, t in ipairs(pending) do
-    if not t.stopped then
+    if t.stopped then
+      -- drop
+    elseif maxDelay ~= nil and t.delay > maxDelay then
+      keep[#keep + 1] = t
+    else
       t.fn()
-      if t.every then M.timers[#M.timers + 1] = t end
+      if t.every then keep[#keep + 1] = t end
     end
   end
+  for _, t in ipairs(keep) do M.timers[#M.timers + 1] = t end
+end
+
+local function uiCall()
+  if M.inCallback then M.uiViolations = M.uiViolations + 1 end
 end
 
 -- ------------------------------------------------------------------ hs
@@ -141,7 +154,10 @@ hs.fs = {
   end,
 }
 
-hs.alert = { show = function(msg, _) M.log.alerts[#M.log.alerts + 1] = tostring(msg) end }
+hs.alert = { show = function(msg, _)
+  uiCall()
+  M.log.alerts[#M.log.alerts + 1] = tostring(msg)
+end }
 
 hs.osascript = {
   result = nil,   -- tests may set M.hs.osascript.result for the next call
@@ -169,7 +185,14 @@ end
 hs.eventtap = {
   event = { types = { flagsChanged = "flagsChanged", keyDown = "keyDown" } },
   new = function(types, cb)
-    local tap = { types = types, cb = cb, enabled = false }
+    local wrapped = function(e)
+      M.inCallback = true
+      local ok, r = pcall(cb, e)
+      M.inCallback = false
+      if not ok then error(r, 0) end
+      return r
+    end
+    local tap = { types = types, cb = wrapped, enabled = false }
     function tap:start() self.enabled = true end
     function tap:stop() self.enabled = false end
     function tap:isEnabled() return self.enabled end
@@ -210,12 +233,14 @@ hs.application = {
 
 -- canvas / screen / menubar / image / webview / misc
 hs.screen = { mainScreen = function()
+  uiCall()
   return { frame = function() return { x = 0, y = 0, w = 1440, h = 900 } end }
 end }
 
 hs.canvas = {
   windowLevels = { overlay = 102 },
   new = function(frame)
+    uiCall()
     local c = { frame = frame, elements = {}, visible = false }
     function c:appendElements(e) self.elements[#self.elements + 1] = e ; return self end
     function c:level(_) return self end
@@ -246,8 +271,8 @@ M.accessibility = true
 hs.accessibilityState = function(_) return M.accessibility end
 
 hs.timer = {
-  doAfter = function(t, fn) return newTimer(fn, false) end,
-  doEvery = function(t, fn) return newTimer(fn, true) end,
+  doAfter = function(t, fn) return newTimer(fn, false, t) end,
+  doEvery = function(t, fn) return newTimer(fn, true, t) end,
 }
 
 M.hs = hs
