@@ -54,12 +54,22 @@ fi
 [ -f assets/xl-corgi.png ]   && cp assets/xl-corgi.png   "$APP/Contents/Resources/xl-corgi.png"
 
 echo "→ Signing (ad-hoc)"
+# Sign the Mach-O engine first, then seal the bundle. The bundle's main
+# executable is a shell launcher; its signature lives in extended
+# attributes, which DMG transport preserves (zip does not, reliably).
+codesign --force --sign - "$APP/Contents/MacOS/ExcelAltCore"
 codesign --force --deep --sign - "$APP"
 
-echo "→ Packaging"
+echo "→ Building DMG (classic drag-to-Applications)"
+DMGROOT="dist/dmgroot"
+rm -rf "$DMGROOT" && mkdir -p "$DMGROOT"
+cp -R "$APP" "$DMGROOT/"
+ln -s /Applications "$DMGROOT/Applications"
+hdiutil create -volname "XL" -srcfolder "$DMGROOT" -ov -format UDZO -quiet dist/XL.dmg
+rm -rf "$DMGROOT"
+
+echo "→ Zip fallback (app + optional installer, for troubleshooting)"
 cp "installer/Install XL.command" dist/
-cp installer/README.txt dist/ 2>/dev/null || true
-(cd dist && zip -qry XL-App.zip ExcelAlt.app "Install XL.command" README.txt 2>/dev/null || \
-            zip -qry XL-App.zip ExcelAlt.app "Install XL.command")
+(cd dist && zip -qry XL-App.zip ExcelAlt.app "Install XL.command")
 rm -rf dist/work
-echo "✓ dist/XL-App.zip ready"
+echo "✓ dist/XL.dmg and dist/XL-App.zip ready"

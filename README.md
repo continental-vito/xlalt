@@ -6,13 +6,13 @@ The app is a menu bar utility: no dock icon, corgi app icon, an ⌥-chart glyph 
 
 ## Download (no build needed)
 
-**[⬇ Download XL-App.zip](https://github.com/vitodelcambio/xl/raw/main/download/XL-App.zip)** — then install like any Mac app:
+**[⬇ Download XL.dmg](https://github.com/vitodelcambio/xl/releases/latest/download/XL.dmg)** — the classic Mac install:
 
-1. Unzip, drag `ExcelAlt.app` into **Applications**, double-click it.
-2. First open only: macOS blocks non-notarized downloads. Go to **System Settings → Privacy & Security**, scroll to the "ExcelAlt was blocked" notice, click **Open Anyway**. (One time; this is Apple's gate for apps without a paid Developer ID. The bundled `Install XL.command` does the equivalent for you if you prefer.)
-3. Grant **Accessibility** to ExcelAlt when asked — shortcuts go live automatically seconds later. Open Excel, tap ⌥.
+1. Double-click the DMG → a window opens with the app and an Applications folder. Drag `ExcelAlt` onto `Applications`. Eject.
+2. Double-click ExcelAlt in Applications. **First open only:** macOS blocks non-notarized downloads — System Settings → Privacy & Security → "ExcelAlt was blocked" → **Open Anyway**. One time, then it opens normally forever. (Removing even that one dialog requires Apple's $99/yr Developer ID + notarization; that's Apple's gate, wired into `build-app.sh` the day there's a certificate.)
+3. Grant **Accessibility** when asked — shortcuts go live automatically seconds later. Open Excel, tap ⌥.
 
-The app is fully self-configuring (v1.3): its launcher writes its own settings on every start, so no installer, no Terminal, works from any folder. Custom shortcuts of kind "menu path" address the Mac **menu bar** (Edit, Format, Window…) in Excel's display language — not the Windows ribbon; prefer the AppleScript kind for language-independent actions.
+The app is fully self-configuring: its launcher writes its own settings on every start, so no installer, no Terminal, works from any folder. DMGs are built, signed, and attached to each release automatically by CI on a real macOS runner (`.github/workflows/release.yml`) — push a `v*` tag and the release appears with the DMG. Custom shortcuts of kind "menu path" address the Mac **menu bar** (Edit, Format, Window…) in Excel's display language — not the Windows ribbon; prefer the AppleScript kind for language-independent actions.
 
 ## Safety model (read before touching the tap code)
 

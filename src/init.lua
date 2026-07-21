@@ -16,11 +16,12 @@
 --  prefs windows force-closed at startup, manager window no longer
 --  pinned on top, clear-all/contents/formats built-ins, freeze panes
 --  via locale-proof AppleScript instead of menu paths.
+--  v14: packaging — release DMG built & properly signed by macOS CI.
 -- =====================================================================
 
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
-  version    = "1.3",
+  version    = "1.4",
   enabled    = true,
   mode       = false,
   seq        = "",

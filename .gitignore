@@ -1,5 +1,5 @@
 dist/
 *.zip
-!download/XL-App.zip
+*.dmg
 __pycache__/
 .DS_Store
