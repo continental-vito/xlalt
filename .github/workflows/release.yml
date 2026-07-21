@@ -1,0 +1,31 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and upload to (e.g. v1.4)'
+        required: true
+permissions:
+  contents: write
+jobs:
+  build-dmg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua and run tests
+        run: |
+          brew install lua >/dev/null
+          lua tests/run_tests.lua
+      - name: Build, sign, and package DMG
+        run: bash build/build-app.sh
+      - name: Create or update release with DMG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$TAG" --title "⌥XL $TAG" \
+            --notes "Download XL.dmg below → drag ExcelAlt to Applications → open (first time: System Settings → Privacy & Security → Open Anyway) → grant Accessibility → tap ⌥ in Excel." \
+            2>/dev/null || true
+          gh release upload "$TAG" dist/XL.dmg dist/XL-App.zip --clobber
