@@ -1,0 +1,15 @@
+name: tests
+on:
+  push:
+  pull_request:
+jobs:
+  lua-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua
+        run: sudo apt-get update -qq && sudo apt-get install -y lua5.4
+      - name: Syntax check
+        run: luac5.4 -p src/init.lua tests/hs_mock.lua tests/run_tests.lua
+      - name: Run test suite
+        run: lua5.4 tests/run_tests.lua
