@@ -46,9 +46,22 @@ Downloads the runtime, rebrands it (`com.corgianalyst.excel-alt-shortcuts`, disp
 
 To regenerate icons after editing the SVGs: `pip install cairosvg && python3 assets/make_icons.py` (outputs land in `assets/out/`; copy `AppIcon.icns`, `menubar@2x.png` into `assets/`).
 
-## End-user install
+## Quick start (pull and run)
 
-Unzip `XL-App.zip`, right-click `Install XL.command` → Open. The installer copies the app to /Applications, configures it, resets any stale Accessibility grant, ad-hoc signs, and launches. Grant Accessibility to "ExcelAlt" when macOS asks; shortcuts go live automatically a couple of seconds later.
+```
+git pull
+./start.sh          # or double-click "Start XL.command" in Finder
+```
+
+The first run builds the app from source (downloads the runtime, rebrands it, embeds `src/init.lua` and the assets), installs it to /Applications, resets any stale Accessibility grant, ad-hoc signs, and launches it. Later runs skip straight to installing and launching the current build; pass `./start.sh --rebuild` to force a fresh build after you change `src/`.
+
+Grant Accessibility to "ExcelAlt" when macOS asks — shortcuts go live automatically a couple of seconds later. Then open Excel and tap ⌥.
+
+Requirements: macOS, plus command-line tools for the one-time build (`git`, `curl`, `unzip`, `codesign`, all standard on a Mac with Xcode command-line tools). The built `dist/` bundle is gitignored, which is why the first pull builds it locally rather than shipping a binary in the repo.
+
+## End-user install (prebuilt zip)
+
+Alternatively, distribute `dist/XL-App.zip` (produced by `build/build-app.sh`). Recipients unzip and right-click `Install XL.command` → Open — same install/permission flow, no build step or command-line tools needed on their machine.
 
 ## Roadmap
 
