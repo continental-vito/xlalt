@@ -40,18 +40,13 @@ echo "  ✓ Installed to /Applications"
 
 # 4) Point the engine at its embedded config, keep it a menu-bar-only agent,
 #    disable any update checks
-defaults write "$BID" MJConfigFile -string "$DEST/Contents/Resources/init.lua"
-defaults write "$BID" MJShowMenuIconKey -bool false
-defaults write "$BID" MJShowDockIconKey -bool false
-defaults write "$BID" MJShowWindowAtLaunchKey -bool false
-defaults write "$BID" SUEnableAutomaticChecks -bool false
-defaults write "$BID" HSUploadCrashData -bool false
+# (Self-configuring since v1.3 — the app writes its own settings at launch.)
 
-# 5) Clear quarantine + any STALE Accessibility grant, then ad-hoc sign.
-#    (A re-signed/renamed bundle keeps an old, invalid TCC entry that
-#     silently blocks event taps — resetting forces a clean prompt.)
+# 5) Clear quarantine and ad-hoc sign. (Accessibility is NOT reset on
+#    routine installs — your existing grant keeps working across updates.
+#    If shortcuts ever go dead after a macOS update, run:
+#      tccutil reset Accessibility com.corgianalyst.excel-alt-shortcuts )
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
-tccutil reset Accessibility "$BID" 2>/dev/null || true
 codesign --force --deep --sign - "$DEST" 2>/dev/null
 echo "  ✓ Signed and cleared for launch"
 

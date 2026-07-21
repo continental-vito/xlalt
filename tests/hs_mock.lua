@@ -220,6 +220,7 @@ M.makeApp = makeApp
 
 hs.application = {
   get = function(bundle) return makeApp(bundle) end,
+  applicationForPID = function(_) return nil end,
   frontmostApplication = function() return makeApp(M.frontBundle) end,
   watcher = {
     activated = "activated", deactivated = "deactivated",

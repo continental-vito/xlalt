@@ -25,17 +25,13 @@ cp -R "$APP" "$DEST"
 echo "  ✓ Copied to /Applications"
 
 # 3) Configure (config path, hide engine menu icon, keep dock hidden, no update checks)
-defaults write "$BID" MJConfigFile -string "$DEST/Contents/Resources/init.lua"
-defaults write "$BID" MJShowMenuIconKey -bool false
-defaults write "$BID" MJShowDockIconKey -bool false
-defaults write "$BID" MJShowWindowAtLaunchKey -bool false
-defaults write "$BID" SUEnableAutomaticChecks -bool false
-defaults write "$BID" HSUploadCrashData -bool false
-echo "  ✓ Configured"
+# (App is self-configuring since v1.3 — the bundle's launcher writes its
+#  own settings on every start; no external configuration needed.)
 
-# 4) Clear quarantine + stale Accessibility grant, then ad-hoc sign
+# 4) Clear quarantine and ad-hoc sign (no Accessibility reset on updates —
+#    your existing grant keeps working; reset only for troubleshooting:
+#      tccutil reset Accessibility com.corgianalyst.excel-alt-shortcuts )
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
-tccutil reset Accessibility "$BID" 2>/dev/null || true
 codesign --force --deep --sign - "$DEST" 2>/dev/null
 echo "  ✓ Signed"
 

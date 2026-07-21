@@ -6,7 +6,13 @@ The app is a menu bar utility: no dock icon, corgi app icon, an ⌥-chart glyph 
 
 ## Download (no build needed)
 
-**[⬇ Download XL-App.zip](https://github.com/vitodelcambio/xl/raw/main/download/XL-App.zip)** — unzip, right-click `Install XL.command` → Open. The installer copies the app to /Applications, resets any stale Accessibility grant, signs, and launches. Grant Accessibility to "ExcelAlt" when macOS asks; shortcuts go live automatically a couple of seconds later. (The right-click-open step and the bundled installer exist because the app is ad-hoc signed, not notarized — macOS quarantines direct downloads, and the installer clears that. A bare `.app` download would be blocked by Gatekeeper.)
+**[⬇ Download XL-App.zip](https://github.com/vitodelcambio/xl/raw/main/download/XL-App.zip)** — then install like any Mac app:
+
+1. Unzip, drag `ExcelAlt.app` into **Applications**, double-click it.
+2. First open only: macOS blocks non-notarized downloads. Go to **System Settings → Privacy & Security**, scroll to the "ExcelAlt was blocked" notice, click **Open Anyway**. (One time; this is Apple's gate for apps without a paid Developer ID. The bundled `Install XL.command` does the equivalent for you if you prefer.)
+3. Grant **Accessibility** to ExcelAlt when asked — shortcuts go live automatically seconds later. Open Excel, tap ⌥.
+
+The app is fully self-configuring (v1.3): its launcher writes its own settings on every start, so no installer, no Terminal, works from any folder. Custom shortcuts of kind "menu path" address the Mac **menu bar** (Edit, Format, Window…) in Excel's display language — not the Windows ribbon; prefer the AppleScript kind for language-independent actions.
 
 ## Safety model (read before touching the tap code)
 

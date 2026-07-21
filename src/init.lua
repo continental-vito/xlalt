@@ -12,11 +12,15 @@
 --  while the window server is waiting on the tap can deadlock, so
 --  macOS killed the tap (typing dead in Excel) and the engine's
 --  re-enable restarted the cycle (shortcuts dead too).
+--  v13: self-configuring launch (no installer needed), engine console/
+--  prefs windows force-closed at startup, manager window no longer
+--  pinned on top, clear-all/contents/formats built-ins, freeze panes
+--  via locale-proof AppleScript instead of menu paths.
 -- =====================================================================
 
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
-  version    = "1.2",
+  version    = "1.3",
   enabled    = true,
   mode       = false,
   seq        = "",
@@ -230,6 +234,9 @@ local BUILTIN = {
   { seq = "hic", desc = "Insert column",           fn = ascript("insert into range (entire column of selection) shift shift to right") },
   { seq = "hdr", desc = "Delete row",              fn = ascript("delete range (entire row of selection) shift shift up") },
   { seq = "hdc", desc = "Delete column",           fn = ascript("delete range (entire column of selection) shift shift to left") },
+  { seq = "hea", desc = "Clear all",               fn = ascript("clear contents selection\nclear formats selection") },
+  { seq = "hec", desc = "Clear contents",          fn = ascript("clear contents selection") },
+  { seq = "hef", desc = "Clear formats",           fn = ascript("clear formats selection") },
 
   -- Formulas
   { seq = "=",   desc = "AutoSum",                 fn = stroke({"cmd","shift"}, "t") },
@@ -242,8 +249,10 @@ local BUILTIN = {
   { seq = "agu", desc = "Ungroup",                 fn = ascript("ungroup entire row of selection") },
 
   -- View / Window
-  { seq = "wff", desc = "Freeze panes (toggle)",   fn = menu({"Window", "Freeze Panes"}) },
-  { seq = "wfu", desc = "Unfreeze panes",          fn = menu({"Window", "Unfreeze Panes"}) },
+  -- Freeze panes via AppleScript: menu-path clicks break on localized
+  -- (non-English) Excel menu bars; the AS property is language-neutral.
+  { seq = "wff", desc = "Freeze panes (toggle)",   fn = ascript("set freeze panes of active window to not (freeze panes of active window)") },
+  { seq = "wfu", desc = "Unfreeze panes",          fn = ascript("set freeze panes of active window to false") },
 }
 
 -- ---------------------------------------------------------------------
@@ -526,7 +535,7 @@ button.del:hover { background:#f9e9e6; }
     <input id="f-param" placeholder="cmd+shift+t   ·   Format > Cells...   ·   script body">
     <button class="go" onclick="add()">Add shortcut</button>
   </div>
-  <p class="hint">Keystroke: mods+key like <b>cmd+shift+t</b> · Menu: path like <b>Format > Column > Width...</b> · AppleScript: body runs inside a tell-Excel block. Deleting a built-in hides it; it can be restored by re-adding the same sequence.</p>
+  <p class="hint">Keystroke: mods+key like <b>cmd+shift+t</b> · Menu: path like <b>Format > Column > Width...</b> · AppleScript: body runs inside a tell-Excel block. Menu paths use your Mac's Excel <b>menu bar</b> (Edit, Format, Window…) in Excel's display language — not the Windows ribbon. Deleting a built-in hides it; it can be restored by re-adding the same sequence.</p>
   <table><thead><tr><th>Sequence</th><th>Action</th><th></th><th></th></tr></thead>
   <tbody id="rows"></tbody></table>
 </main>
@@ -603,7 +612,7 @@ end
 
 local function openManager()
   if ExcelAlt.manager then
-    ExcelAlt.manager:show() ; ExcelAlt.manager:bringToFront(true)
+    ExcelAlt.manager:show() ; ExcelAlt.manager:bringToFront()
     pushCatalog()
     return
   end
@@ -633,8 +642,9 @@ local function openManager()
     :allowTextEntry(true)
     :deleteOnClose(false)
     :html(html)
+  pcall(function() ExcelAlt.manager:level(hs.drawing.windowLevels.normal) end)
   ExcelAlt.manager:show()
-  ExcelAlt.manager:bringToFront(true)
+  ExcelAlt.manager:bringToFront()   -- NOT bringToFront(true): that pins on top
 end
 
 -- ---------------------------------------------------------------------
@@ -703,6 +713,30 @@ ExcelAlt.watcher = hs.application.watcher.new(onAppEvent)
 ExcelAlt.watcher:start()
 
 setupMenubar()
+
+-- The underlying runtime may open its console or preferences window on
+-- first launch (before our own settings apply). Close anything that
+-- isn't ours, now and shortly after launch.
+local function hideEngineWindows()
+  pcall(function()
+    if hs.console and hs.console.hswindow then
+      local cw = hs.console.hswindow()
+      if cw then cw:close() end
+    end
+    local me = hs.application.applicationForPID(hs.processInfo.processID)
+    if me then
+      for _, w in ipairs(me:allWindows() or {}) do
+        local t = w:title() or ""
+        if t:find("Hammerspoon") or t:find("Console") or t:find("Preferences") then
+          w:close()
+        end
+      end
+    end
+  end)
+end
+hideEngineWindows()
+hs.timer.doAfter(1, hideEngineWindows)
+hs.timer.doAfter(3, hideEngineWindows)
 
 local function grantReady()
   ExcelAlt.tapsReady = true

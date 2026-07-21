@@ -144,6 +144,19 @@ check("H O I autofits column",
   lastScript():find("autofit entire column of selection") ~= nil, lastScript())
 
 tapOption()
+typeKeys("hea")
+mock.flushTimers()
+check("H E A clears contents and formats (locale-proof AppleScript)",
+  lastScript():find("clear contents selection") ~= nil and
+  lastScript():find("clear formats selection") ~= nil, lastScript())
+
+tapOption()
+typeKeys("wff")
+mock.flushTimers()
+check("W F F toggles freeze panes via AppleScript, not menu paths",
+  lastScript():find("freeze panes of active window") ~= nil, lastScript())
+
+tapOption()
 r = typeKeys("=")
 mock.flushTimers()
 local ks = mock.log.keystrokes[#mock.log.keystrokes]

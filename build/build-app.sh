@@ -27,7 +27,23 @@ echo "→ Rebranding bundle"
 /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$APP/Contents/Info.plist" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Set :LSUIElement true" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$APP/Contents/Info.plist" 2>/dev/null || true
-mv "$APP/Contents/MacOS/Hammerspoon" "$APP/Contents/MacOS/ExcelAlt"
+mv "$APP/Contents/MacOS/Hammerspoon" "$APP/Contents/MacOS/ExcelAltCore"
+# Self-configuring launcher: writes the app's own settings on every launch,
+# then hands off to the engine. Makes the app drag-installable from any
+# location with no installer and no external `defaults` step.
+cat > "$APP/Contents/MacOS/ExcelAlt" <<'SHIM'
+#!/bin/bash
+BID="com.corgianalyst.excel-alt-shortcuts"
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+defaults write "$BID" MJConfigFile -string "$DIR/Resources/init.lua"
+defaults write "$BID" MJShowMenuIconKey -bool false
+defaults write "$BID" MJShowDockIconKey -bool false
+defaults write "$BID" MJShowWindowAtLaunchKey -bool false
+defaults write "$BID" SUEnableAutomaticChecks -bool false
+defaults write "$BID" HSUploadCrashData -bool false
+exec "$DIR/MacOS/ExcelAltCore"
+SHIM
+chmod +x "$APP/Contents/MacOS/ExcelAlt"
 
 echo "→ Embedding engine config and assets"
 cp src/init.lua "$APP/Contents/Resources/init.lua"
