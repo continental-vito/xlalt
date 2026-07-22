@@ -264,7 +264,11 @@ end }
 
 hs.image = { imageFromPath = function(_) return nil end }
 hs.base64 = { encode = function(s) return "b64" end }
-hs.processInfo = { resourcePath = "/tmp/xl-test-resources" }
+hs.processInfo = { resourcePath = "/tmp/xl-test-resources",
+                   bundleID = "com.corgianalyst.excel-alt-shortcuts" }
+hs.hotkey = { new = function(mods, key, fn)
+  return { enable = function() end, disable = function() end }
+end }
 hs.webview = {
   usercontent = { new = function(_) return { setCallback = function(self, cb) M.webviewCb = cb ; return self end } end },
   new = function() error("webview should not be constructed in headless tests") end,

@@ -21,7 +21,7 @@
 
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
-  version    = "1.8",
+  version    = "1.9",
   enabled    = true,
   mode       = false,
   seq        = "",
@@ -42,6 +42,7 @@ ExcelAlt = {
 }
 
 local EXCEL   = "com.microsoft.Excel"
+local SELF_BUNDLE = (hs.processInfo and hs.processInfo.bundleID) or "com.corgianalyst.excel-alt-shortcuts"
 local APPNAME = "⌥XL"
 local SEQ_TIMEOUT = 4
 
@@ -498,7 +499,16 @@ local function onAppEvent(_, event, app)
   if event ~= w.activated and event ~= w.deactivated and event ~= w.terminated then
     return
   end
-  local isExcel = app ~= nil and app:bundleID() == EXCEL
+  local bid = app ~= nil and app:bundleID() or nil
+  -- Cmd+Q quits ExcelAlt, but only while ExcelAlt itself is frontmost
+  if bid == SELF_BUNDLE and ExcelAlt.quitKey then
+    if event == w.activated then
+      pcall(function() ExcelAlt.quitKey:enable() end)
+    else
+      pcall(function() ExcelAlt.quitKey:disable() end)
+    end
+  end
+  local isExcel = bid == EXCEL
   if event == w.activated then
     ExcelAlt.excelFront = isExcel
   elseif isExcel then          -- Excel deactivated or quit
@@ -738,7 +748,10 @@ local function setupMenubar()
       ExcelAlt.bar:setIcon(img, true)  -- explicit template: auto-adapts to dark menu bars
     end
   end
-  if not ExcelAlt.barIcon then ExcelAlt.bar:setTitle("⌥XL") end
+  -- Title is ALWAYS set: if the status item exists, text cannot be
+  -- invisible, so presence/absence of "⌥XL" in the menu bar is a
+  -- definitive diagnostic (icon-only could hide via rendering issues).
+  ExcelAlt.bar:setTitle("⌥XL")
   ExcelAlt.bar:setTooltip(APPNAME .. " — Alt shortcuts for Excel")
   ExcelAlt.bar:setMenu(menubarMenu)
 end
@@ -794,23 +807,17 @@ pcall(function() hs.openConsoleOnDockClick(false) end)
 hs.dockIconClickCallback = function() pcall(openManager) end
 pcall(openManager)
 
--- Menu bar watchdog: if the status item vanishes (process-type change,
--- engine reload, menu-bar managers), rebuild it. Checks every 5s.
-ExcelAlt.barWatch = hs.timer.doEvery(5, function()
-  local ok, inBar = pcall(function()
-    return ExcelAlt.bar ~= nil and ExcelAlt.bar:isInMenuBar()
-  end)
-  if not ok or inBar ~= true then setupMenubar() end
-end)
+-- The launch-time agent->regular-app transform is known to destroy status
+-- items created before it completes: rebuild ours once things settle.
+hs.timer.doAfter(2, setupMenubar)
+hs.timer.doAfter(6, setupMenubar)
 
--- Engine console/preferences can appear before trust is granted (when we
--- cannot yet close other windows). Sweep every 2s for the first minute so
--- they disappear within seconds of permission landing.
-local sweepCount = 0
-ExcelAlt.sweepTimer = hs.timer.doEvery(2, function()
-  sweepCount = sweepCount + 1
-  hideEngineWindows()
-  if sweepCount >= 30 and ExcelAlt.sweepTimer then ExcelAlt.sweepTimer:stop() end
+-- Cmd+Q support: a hotkey active ONLY while ExcelAlt is the frontmost app
+-- (enabled/disabled by the app watcher above). Requires Accessibility, so
+-- it activates in the steady state; menu bar Quit and Dock right-click
+-- Quit work regardless.
+pcall(function()
+  ExcelAlt.quitKey = hs.hotkey.new({"cmd"}, "q", function() os.exit() end)
 end)
 
 local function grantReady()
@@ -827,6 +834,7 @@ local function grantReady()
   hideEngineWindows()
   hs.timer.doAfter(1, hideEngineWindows)
   pcall(pushCatalog)
+  hs.timer.doAfter(1, setupMenubar)
   hs.alert.show(APPNAME .. " ready — tap ⌥ in Excel", 1.5)
 end
 
