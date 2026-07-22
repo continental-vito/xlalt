@@ -28,22 +28,17 @@ echo "→ Rebranding bundle"
   /usr/libexec/PlistBuddy -c "Set :LSUIElement true" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$APP/Contents/Info.plist" 2>/dev/null || true
 mv "$APP/Contents/MacOS/Hammerspoon" "$APP/Contents/MacOS/ExcelAltCore"
-# Self-configuring launcher: writes the app's own settings on every launch,
-# then hands off to the engine. Makes the app drag-installable from any
-# location with no installer and no external `defaults` step.
-cat > "$APP/Contents/MacOS/ExcelAlt" <<'SHIM'
-#!/bin/bash
-BID="com.corgianalyst.excel-alt-shortcuts"
-DIR="$(cd "$(dirname "$0")/.." && pwd)"
-defaults write "$BID" MJConfigFile -string "$DIR/Resources/init.lua"
-defaults write "$BID" MJShowMenuIconKey -bool false
-defaults write "$BID" MJShowDockIconKey -bool false
-defaults write "$BID" MJShowWindowAtLaunchKey -bool false
-defaults write "$BID" SUEnableAutomaticChecks -bool false
-defaults write "$BID" HSUploadCrashData -bool false
-exec "$DIR/MacOS/ExcelAltCore"
-SHIM
-chmod +x "$APP/Contents/MacOS/ExcelAlt"
+# Native launcher (see build/launcher.c): configures the app's own prefs,
+# then execs the engine. Compiled here so the bundle's main executable is
+# a proper Mach-O, which Gatekeeper accepts unconditionally.
+clang -O2 -o "$APP/Contents/MacOS/ExcelAlt" build/launcher.c -framework CoreFoundation
+
+echo "→ De-branding engine UI resources"
+# First-run windows (e.g. the Accessibility prompt) come from the engine's
+# nib/strings resources. Length-preserving rename keeps binary plists valid:
+# "Hammerspoon" (11 chars) -> "ExcelAlt XL" (11 chars).
+find "$APP/Contents/Resources" \( -name "*.nib" -o -name "*.strings" \) -print0 | \
+  xargs -0 perl -pi -e 's/Hammerspoon/ExcelAlt XL/g' 2>/dev/null || true
 
 echo "→ Embedding engine config and assets"
 cp src/init.lua "$APP/Contents/Resources/init.lua"

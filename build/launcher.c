@@ -1,0 +1,50 @@
+/* ExcelAlt native launcher: writes the app's own preferences (config path,
+ * no engine menu icon, no dock icon, no console, no update checks) via
+ * CFPreferences under the app's own bundle id, then execs the engine.
+ * Compiled on the CI macOS runner; replaces the former shell shim, which
+ * some Gatekeeper configurations refuse as a bundle main executable. */
+#include <CoreFoundation/CoreFoundation.h>
+#include <mach-o/dyld.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <unistd.h>
+
+static void setb(const char *k, Boolean v) {
+  CFStringRef ks = CFStringCreateWithCString(NULL, k, kCFStringEncodingUTF8);
+  CFPreferencesSetAppValue(ks, v ? kCFBooleanTrue : kCFBooleanFalse,
+                           kCFPreferencesCurrentApplication);
+  CFRelease(ks);
+}
+
+int main(void) {
+  char exe[PATH_MAX]; uint32_t n = sizeof exe;
+  if (_NSGetExecutablePath(exe, &n) != 0) return 1;
+  char real[PATH_MAX];
+  if (!realpath(exe, real)) { strncpy(real, exe, sizeof real - 1); real[sizeof real - 1] = 0; }
+
+  char contents[PATH_MAX];
+  strncpy(contents, real, sizeof contents - 1); contents[sizeof contents - 1] = 0;
+  char *p = strrchr(contents, '/'); if (p) *p = 0;   /* strip /ExcelAlt  */
+  p = strrchr(contents, '/'); if (p) *p = 0;         /* strip /MacOS     */
+
+  char cfg[PATH_MAX];
+  snprintf(cfg, sizeof cfg, "%s/Resources/init.lua", contents);
+  CFStringRef cfgs = CFStringCreateWithCString(NULL, cfg, kCFStringEncodingUTF8);
+  CFPreferencesSetAppValue(CFSTR("MJConfigFile"), cfgs, kCFPreferencesCurrentApplication);
+  CFRelease(cfgs);
+
+  setb("MJShowMenuIconKey", false);
+  setb("MJShowDockIconKey", false);
+  setb("MJShowWindowAtLaunchKey", false);
+  setb("SUEnableAutomaticChecks", false);
+  setb("HSUploadCrashData", false);
+  CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication);
+
+  char core[PATH_MAX];
+  snprintf(core, sizeof core, "%s/MacOS/ExcelAltCore", contents);
+  char *args[] = { core, NULL };
+  execv(core, args);
+  return 1;   /* execv only returns on failure */
+}
