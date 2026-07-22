@@ -14,10 +14,9 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Lua and run tests
-        run: |
-          brew install lua >/dev/null
-          lua tests/run_tests.lua
+      # Tests run on every push in the ubuntu 'tests' workflow; this job
+      # only builds and ships. (A brew/lua install here proved brittle on
+      # the macOS runner and failed the v1.4.1 build.)
       - name: Build, sign, and package DMG
         run: bash build/build-app.sh
       - name: Create or update release with DMG
