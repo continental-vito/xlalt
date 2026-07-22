@@ -21,7 +21,7 @@
 
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
-  version    = "1.7",
+  version    = "1.8",
   enabled    = true,
   mode       = false,
   seq        = "",
@@ -97,6 +97,21 @@ local function menu(path)
     for i = 1, #path - 1 do p2[i] = path[i] end
     p2[#path] = pat
     app:selectMenuItem(p2, true)
+  end
+end
+
+-- Click a menu path; if the item can't be found (localization, version
+-- differences), run the AppleScript fallback instead.
+local function menuThen(path, fallbackFn)
+  return function()
+    local app = excelApp(); if not app then return end
+    if app:selectMenuItem(path) then return end
+    local pat = "^" .. path[#path]:gsub("%p", "%%%1")
+    local p2 = {}
+    for i = 1, #path - 1 do p2[i] = path[i] end
+    p2[#path] = pat
+    if app:selectMenuItem(p2, true) then return end
+    if fallbackFn then fallbackFn() end
   end
 end
 
@@ -235,9 +250,9 @@ local BUILTIN = {
   { seq = "hic", desc = "Insert column",           fn = ascript("insert into range (entire column of selection) shift shift to right") },
   { seq = "hdr", desc = "Delete row",              fn = ascript("delete range (entire row of selection) shift shift up") },
   { seq = "hdc", desc = "Delete column",           fn = ascript("delete range (entire column of selection) shift shift to left") },
-  { seq = "hea", desc = "Clear all",               fn = ascript("try\nclear range selection\non error\nclear contents selection\nclear formats selection\nend try") },
-  { seq = "hec", desc = "Clear contents",          fn = ascript("clear contents selection") },
-  { seq = "hef", desc = "Clear formats",           fn = ascript("clear formats selection") },
+  { seq = "hea", desc = "Clear all",               fn = nil },  -- set below (menuThen needs fwd decl order)
+  { seq = "hec", desc = "Clear contents",          fn = nil },
+  { seq = "hef", desc = "Clear formats",           fn = nil },
 
   -- Formulas
   { seq = "=",   desc = "AutoSum",                 fn = stroke({"cmd","shift"}, "t") },
@@ -255,6 +270,19 @@ local BUILTIN = {
   { seq = "wff", desc = "Freeze panes (toggle)",   fn = ascript("set freeze panes of active window to not (freeze panes of active window)") },
   { seq = "wfu", desc = "Unfreeze panes",          fn = ascript("set freeze panes of active window to false") },
 }
+
+-- Clear group: Excel for Mac exposes these at Edit > Clear > … (user-
+-- verified). Menu click first; AppleScript fallback for localized menus.
+for _, b in ipairs(BUILTIN) do
+  if b.seq == "hea" then
+    b.fn = menuThen({"Edit", "Clear", "All"},
+      ascript("clear contents selection\nclear formats selection"))
+  elseif b.seq == "hec" then
+    b.fn = menuThen({"Edit", "Clear", "Contents"}, ascript("clear contents selection"))
+  elseif b.seq == "hef" then
+    b.fn = menuThen({"Edit", "Clear", "Formats"}, ascript("clear formats selection"))
+  end
+end
 
 -- ---------------------------------------------------------------------
 -- Custom shortcuts + disabled built-ins (manager persistence)
@@ -697,6 +725,7 @@ local function menubarMenu()
 end
 
 local function setupMenubar()
+  if ExcelAlt.bar then pcall(function() ExcelAlt.bar:delete() end) end
   ExcelAlt.bar = hs.menubar.new()
   if not ExcelAlt.bar then return end
   local p = hs.processInfo.resourcePath .. "/xl-menubar@2x.png"
@@ -706,7 +735,7 @@ local function setupMenubar()
       img = img:setSize({ w = 18, h = 18 })
       img = img:template(true)
       ExcelAlt.barIcon = img
-      ExcelAlt.bar:setIcon(img)
+      ExcelAlt.bar:setIcon(img, true)  -- explicit template: auto-adapts to dark menu bars
     end
   end
   if not ExcelAlt.barIcon then ExcelAlt.bar:setTitle("⌥XL") end
@@ -764,6 +793,25 @@ hs.timer.doAfter(3, hideEngineWindows)
 pcall(function() hs.openConsoleOnDockClick(false) end)
 hs.dockIconClickCallback = function() pcall(openManager) end
 pcall(openManager)
+
+-- Menu bar watchdog: if the status item vanishes (process-type change,
+-- engine reload, menu-bar managers), rebuild it. Checks every 5s.
+ExcelAlt.barWatch = hs.timer.doEvery(5, function()
+  local ok, inBar = pcall(function()
+    return ExcelAlt.bar ~= nil and ExcelAlt.bar:isInMenuBar()
+  end)
+  if not ok or inBar ~= true then setupMenubar() end
+end)
+
+-- Engine console/preferences can appear before trust is granted (when we
+-- cannot yet close other windows). Sweep every 2s for the first minute so
+-- they disappear within seconds of permission landing.
+local sweepCount = 0
+ExcelAlt.sweepTimer = hs.timer.doEvery(2, function()
+  sweepCount = sweepCount + 1
+  hideEngineWindows()
+  if sweepCount >= 30 and ExcelAlt.sweepTimer then ExcelAlt.sweepTimer:stop() end
+end)
 
 local function grantReady()
   ExcelAlt.tapsReady = true

@@ -252,10 +252,12 @@ hs.canvas = {
 }
 
 hs.menubar = { new = function()
-  local b = {}
+  local b = { }
   for _, m in ipairs({ "setIcon", "setTitle", "setTooltip", "setMenu" }) do
     b[m] = function(self, v) b["_" .. m] = v ; return self end
   end
+  function b:isInMenuBar() return true end
+  function b:delete() b.deleted = true end
   M.menubar = b
   return b
 end }

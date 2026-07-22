@@ -146,9 +146,10 @@ check("H O I autofits column",
 tapOption()
 typeKeys("hea")
 mock.flushTimers()
-check("H E A clears contents and formats (locale-proof AppleScript)",
-  lastScript():find("clear contents selection") ~= nil and
-  lastScript():find("clear formats selection") ~= nil, lastScript())
+local mc = mock.log.menuClicks[#mock.log.menuClicks]
+check("H E A clicks Edit > Clear > All (user-verified Mac menu path)",
+  mc and mc.path[1] == "Edit" and mc.path[2] == "Clear" and mc.path[3] == "All",
+  mc and table.concat(mc.path, " > "))
 
 tapOption()
 typeKeys("wff")
