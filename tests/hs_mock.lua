@@ -173,12 +173,23 @@ hs.osascript = {
 -- keycodes: enough of a map for the tests (code -> name)
 hs.keycodes = { map = {} }
 do
-  local names = { "a","b","c","d","e","f","g","h","i","j","k","l","m",
-                  "n","o","p","q","r","s","t","u","v","w","x","y","z",
-                  "0","1","2","3","4","5","6","7","8","9","=","escape","return","space" }
-  for i, n in ipairs(names) do hs.keycodes.map[i] = n end
   M.code = {}
-  for i, n in ipairs(names) do M.code[n] = i end
+  local letters = { "a","b","c","d","e","f","g","h","i","j","k","l","m",
+                    "n","o","p","q","r","s","t","u","v","w","x","y","z",
+                    "=","escape","return","space" }
+  for i, n in ipairs(letters) do            -- offset avoids real digit codes
+    hs.keycodes.map[100 + i] = n
+    M.code[n] = 100 + i
+  end
+  -- digits live at their REAL macOS keycodes (engine reads them raw)
+  local digitCodes = { ["1"]=18,["2"]=19,["3"]=20,["4"]=21,["5"]=23,
+                       ["6"]=22,["7"]=26,["8"]=28,["9"]=25,["0"]=29 }
+  for ch, code in pairs(digitCodes) do
+    M.code[ch] = code
+    -- deliberately map these to AZERTY symbols to prove layout independence
+    hs.keycodes.map[code] = ({["1"]="&",["2"]="é",["3"]='"',["4"]="'",["5"]="(",
+                              ["6"]="-",["7"]="è",["8"]="_",["9"]="ç",["0"]="à"})[ch]
+  end
 end
 
 -- eventtap

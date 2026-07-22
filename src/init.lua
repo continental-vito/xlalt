@@ -21,7 +21,7 @@
 
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
-  version    = "1.9",
+  version    = "2.0",
   enabled    = true,
   mode       = false,
   seq        = "",
@@ -53,6 +53,12 @@ local SUPPORT = os.getenv("HOME") .. "/Library/Application Support/ExcelAlt"
 hs.fs.mkdir(SUPPORT)
 local STORE = SUPPORT .. "/shortcuts.json"
 local PREFS = SUPPORT .. "/prefs.json"
+
+-- Lightweight diagnostics: ~/Library/Application Support/ExcelAlt/debug.log
+local function dlog(msg)
+  local f = io.open(SUPPORT .. "/debug.log", "a")
+  if f then f:write(os.date("%Y-%m-%d %H:%M:%S  ") .. tostring(msg) .. "\n") ; f:close() end
+end
 
 local function fileExists(p)
   local a = hs.fs.attributes(p)
@@ -200,127 +206,154 @@ local function setFormat(fmt)
 end
 
 -- ---------------------------------------------------------------------
--- Built-in shortcut map (Windows Alt sequences)
+-- Built-in shortcut map (declarative: every entry knows its own command,
+-- so the manager can display and edit it)
 -- ---------------------------------------------------------------------
 local BUILTIN = {
-  -- Home: clipboard / editing
-  { seq = "hvv", desc = "Paste values",            fn = ascript("paste special selection what paste values") },
-  { seq = "hvf", desc = "Paste formulas",          fn = ascript("paste special selection what paste formulas") },
-  { seq = "hvt", desc = "Paste formats",           fn = ascript("paste special selection what paste formats") },
-  { seq = "es",  desc = "Paste Special…",          fn = stroke({"ctrl","cmd"}, "v") },
+  { seq = "hvv", desc = "Paste values",      kind = "applescript", script = "paste special selection what paste values" },
+  { seq = "hvf", desc = "Paste formulas",    kind = "applescript", script = "paste special selection what paste formulas" },
+  { seq = "hvt", desc = "Paste formats",     kind = "applescript", script = "paste special selection what paste formats" },
+  { seq = "es",  desc = "Paste Special…",    kind = "keystroke",   mods = "ctrl+cmd", key = "v" },
 
-  -- Home: font-ish
-  { seq = "h1",  desc = "Bold",                    fn = stroke({"cmd"}, "b") },
-  { seq = "h2",  desc = "Italic",                  fn = stroke({"cmd"}, "i") },
-  { seq = "h3",  desc = "Underline",               fn = stroke({"cmd"}, "u") },
+  { seq = "h1",  desc = "Bold",              kind = "keystroke",   mods = "cmd", key = "b" },
+  { seq = "h2",  desc = "Italic",            kind = "keystroke",   mods = "cmd", key = "i" },
+  { seq = "h3",  desc = "Underline",         kind = "keystroke",   mods = "cmd", key = "u" },
 
-  -- Home: alignment
-  { seq = "hac", desc = "Align center",            fn = ascript("set horizontal alignment of selection to horizontal align center") },
-  { seq = "hal", desc = "Align left",              fn = ascript("set horizontal alignment of selection to horizontal align left") },
-  { seq = "har", desc = "Align right",             fn = ascript("set horizontal alignment of selection to horizontal align right") },
-  { seq = "hat", desc = "Align top",               fn = ascript("set vertical alignment of selection to vertical alignment top") },
-  { seq = "ham", desc = "Align middle",            fn = ascript("set vertical alignment of selection to vertical alignment center") },
-  { seq = "hab", desc = "Align bottom",            fn = ascript("set vertical alignment of selection to vertical alignment bottom") },
-  { seq = "hw",  desc = "Wrap text (toggle)",      fn = ascript("set wrap text of selection to not (wrap text of selection)") },
-  { seq = "hmc", desc = "Merge & center",          fn = ascript("merge selection\nset horizontal alignment of selection to horizontal align center") },
-  { seq = "hmu", desc = "Unmerge cells",           fn = ascript("unmerge selection") },
+  { seq = "hac", desc = "Align center",      kind = "applescript", script = "set horizontal alignment of selection to horizontal align center" },
+  { seq = "hal", desc = "Align left",        kind = "applescript", script = "set horizontal alignment of selection to horizontal align left" },
+  { seq = "har", desc = "Align right",       kind = "applescript", script = "set horizontal alignment of selection to horizontal align right" },
+  { seq = "hat", desc = "Align top",         kind = "applescript", script = "set vertical alignment of selection to vertical alignment top" },
+  { seq = "ham", desc = "Align middle",      kind = "applescript", script = "set vertical alignment of selection to vertical alignment center" },
+  { seq = "hab", desc = "Align bottom",      kind = "applescript", script = "set vertical alignment of selection to vertical alignment bottom" },
+  { seq = "hw",  desc = "Wrap text (toggle)",kind = "applescript", script = "set wrap text of selection to not (wrap text of selection)" },
+  { seq = "hmc", desc = "Merge & center",    kind = "applescript", script = "merge selection\nset horizontal alignment of selection to horizontal align center" },
+  { seq = "hmu", desc = "Unmerge cells",     kind = "applescript", script = "unmerge selection" },
 
-  -- Home: number formats
-  { seq = "h0",  desc = "Increase decimals",       fn = decimals(1) },
-  { seq = "h9",  desc = "Decrease decimals",       fn = decimals(-1) },
-  { seq = "hp",  desc = "Percent style",           fn = setFormat("0%") },
-  { seq = "hk",  desc = "Comma style",             fn = setFormat("#,##0.00") },
-  { seq = "han", desc = "Accounting format",       fn = setFormat("_($* #,##0.00_);_($* (#,##0.00);_($* \\\"-\\\"??_);_(@_)") },
+  { seq = "h0",  desc = "Increase decimals", kind = "lua", fn = decimals(1),  cmd = "Smart decimal +1 on current number format" },
+  { seq = "h9",  desc = "Decrease decimals", kind = "lua", fn = decimals(-1), cmd = "Smart decimal −1 on current number format" },
+  { seq = "hp",  desc = "Percent style",     kind = "applescript", script = 'set number format of selection to "0%"' },
+  { seq = "hk",  desc = "Comma style",       kind = "applescript", script = 'set number format of selection to "#,##0.00"' },
+  { seq = "han", desc = "Accounting format", kind = "applescript", script = 'set number format of selection to "_($* #,##0.00_);_($* (#,##0.00);_($* \\"-\\"??_);_(@_)"' },
 
-  -- Home: borders (Windows letters O/P/L/R/N/A/S/T)
-  { seq = "hbo", desc = "Bottom border",           fn = border("edge bottom") },
-  { seq = "hbp", desc = "Top border",              fn = border("edge top") },
-  { seq = "hbl", desc = "Left border",             fn = border("edge left") },
-  { seq = "hbr", desc = "Right border",            fn = border("edge right") },
-  { seq = "hbn", desc = "No borders",              fn = noBorders() },
-  { seq = "hba", desc = "All borders",             fn = allBorders("edge bottom, edge top, edge left, edge right, inside horizontal, inside vertical") },
-  { seq = "hbs", desc = "Outside borders",         fn = allBorders("edge bottom, edge top, edge left, edge right") },
-  { seq = "hbt", desc = "Thick box border",        fn = allBorders("edge bottom, edge top, edge left, edge right", "border weight thick") },
+  { seq = "hbo", desc = "Bottom border",     kind = "lua", fn = border("edge bottom"),  cmd = "Border: bottom edge, thin" },
+  { seq = "hbp", desc = "Top border",        kind = "lua", fn = border("edge top"),     cmd = "Border: top edge, thin" },
+  { seq = "hbl", desc = "Left border",       kind = "lua", fn = border("edge left"),    cmd = "Border: left edge, thin" },
+  { seq = "hbr", desc = "Right border",      kind = "lua", fn = border("edge right"),   cmd = "Border: right edge, thin" },
+  { seq = "hbn", desc = "No borders",        kind = "lua", fn = noBorders(),            cmd = "Border: remove all edges" },
+  { seq = "hba", desc = "All borders",       kind = "lua", fn = allBorders("edge bottom, edge top, edge left, edge right, inside horizontal, inside vertical"), cmd = "Border: all edges + inside, thin" },
+  { seq = "hbs", desc = "Outside borders",   kind = "lua", fn = allBorders("edge bottom, edge top, edge left, edge right"), cmd = "Border: outside edges, thin" },
+  { seq = "hbt", desc = "Thick box border",  kind = "lua", fn = allBorders("edge bottom, edge top, edge left, edge right", "border weight thick"), cmd = "Border: outside edges, thick" },
 
-  -- Home: cells / rows / columns
-  { seq = "hoi", desc = "AutoFit column width",    fn = ascript("autofit entire column of selection") },
-  { seq = "hoa", desc = "AutoFit row height",      fn = ascript("autofit entire row of selection") },
-  { seq = "how", desc = "Column width…",           fn = menu({"Format", "Column", "Width..."}) },
-  { seq = "hoh", desc = "Row height…",             fn = menu({"Format", "Row", "Height..."}) },
-  { seq = "hir", desc = "Insert row",              fn = ascript("insert into range (entire row of selection) shift shift down") },
-  { seq = "hic", desc = "Insert column",           fn = ascript("insert into range (entire column of selection) shift shift to right") },
-  { seq = "hdr", desc = "Delete row",              fn = ascript("delete range (entire row of selection) shift shift up") },
-  { seq = "hdc", desc = "Delete column",           fn = ascript("delete range (entire column of selection) shift shift to left") },
-  { seq = "hea", desc = "Clear all",               fn = nil },  -- set below (menuThen needs fwd decl order)
-  { seq = "hec", desc = "Clear contents",          fn = nil },
-  { seq = "hef", desc = "Clear formats",           fn = nil },
+  { seq = "hoi", desc = "AutoFit column width", kind = "applescript", script = "autofit entire column of selection" },
+  { seq = "hoa", desc = "AutoFit row height",   kind = "applescript", script = "autofit entire row of selection" },
+  { seq = "how", desc = "Column width…",        kind = "menu", path = "Format > Column > Width..." },
+  { seq = "hoh", desc = "Row height…",          kind = "menu", path = "Format > Row > Height..." },
+  { seq = "hir", desc = "Insert row",           kind = "applescript", script = "insert into range (entire row of selection) shift shift down" },
+  { seq = "hic", desc = "Insert column",        kind = "applescript", script = "insert into range (entire column of selection) shift shift to right" },
+  { seq = "hdr", desc = "Delete row",           kind = "applescript", script = "delete range (entire row of selection) shift shift up" },
+  { seq = "hdc", desc = "Delete column",        kind = "applescript", script = "delete range (entire column of selection) shift shift to left" },
+  { seq = "hea", desc = "Clear all",            kind = "menu", path = "Edit > Clear > All",      fallback = "clear contents selection\nclear formats selection" },
+  { seq = "hec", desc = "Clear contents",       kind = "menu", path = "Edit > Clear > Contents", fallback = "clear contents selection" },
+  { seq = "hef", desc = "Clear formats",        kind = "menu", path = "Edit > Clear > Formats",  fallback = "clear formats selection" },
 
-  -- Formulas
-  { seq = "=",   desc = "AutoSum",                 fn = stroke({"cmd","shift"}, "t") },
+  { seq = "=",   desc = "AutoSum",              kind = "keystroke", mods = "cmd+shift", key = "t" },
 
-  -- Data
-  { seq = "asa", desc = "Sort ascending",          fn = ascript("sort selection key1 active cell order1 sort ascending") },
-  { seq = "asd", desc = "Sort descending",         fn = ascript("sort selection key1 active cell order1 sort descending") },
-  { seq = "att", desc = "Toggle AutoFilter",       fn = ascript("set autofilter mode of active sheet to not (autofilter mode of active sheet)") },
-  { seq = "agg", desc = "Group rows/columns",      fn = ascript("group entire row of selection") },
-  { seq = "agu", desc = "Ungroup",                 fn = ascript("ungroup entire row of selection") },
+  { seq = "asa", desc = "Sort ascending",       kind = "applescript", script = "sort selection key1 active cell order1 sort ascending" },
+  { seq = "asd", desc = "Sort descending",      kind = "applescript", script = "sort selection key1 active cell order1 sort descending" },
+  { seq = "att", desc = "Toggle AutoFilter",    kind = "applescript", script = "set autofilter mode of active sheet to not (autofilter mode of active sheet)" },
+  { seq = "agg", desc = "Group rows/columns",   kind = "applescript", script = "group entire row of selection" },
+  { seq = "agu", desc = "Ungroup",              kind = "applescript", script = "ungroup entire row of selection" },
 
-  -- View / Window
-  -- Freeze panes via AppleScript: menu-path clicks break on localized
-  -- (non-English) Excel menu bars; the AS property is language-neutral.
-  { seq = "wff", desc = "Freeze panes (toggle)",   fn = ascript("set freeze panes of active window to not (freeze panes of active window)") },
-  { seq = "wfu", desc = "Unfreeze panes",          fn = ascript("set freeze panes of active window to false") },
+  { seq = "wff", desc = "Freeze panes (toggle)",kind = "applescript", script = "set freeze panes of active window to not (freeze panes of active window)" },
+  { seq = "wfu", desc = "Unfreeze panes",       kind = "applescript", script = "set freeze panes of active window to false" },
 }
-
--- Clear group: Excel for Mac exposes these at Edit > Clear > … (user-
--- verified). Menu click first; AppleScript fallback for localized menus.
-for _, b in ipairs(BUILTIN) do
-  if b.seq == "hea" then
-    b.fn = menuThen({"Edit", "Clear", "All"},
-      ascript("clear contents selection\nclear formats selection"))
-  elseif b.seq == "hec" then
-    b.fn = menuThen({"Edit", "Clear", "Contents"}, ascript("clear contents selection"))
-  elseif b.seq == "hef" then
-    b.fn = menuThen({"Edit", "Clear", "Formats"}, ascript("clear formats selection"))
-  end
-end
 
 -- ---------------------------------------------------------------------
 -- Custom shortcuts + disabled built-ins (manager persistence)
 -- ---------------------------------------------------------------------
 local store = readJSON(STORE) or { custom = {}, disabled = {} }
 store.custom, store.disabled = store.custom or {}, store.disabled or {}
+store.renames = store.renames or {}
 
-local function customFn(entry)
-  if entry.kind == "keystroke" then
-    local mods = {}
-    for m in (entry.mods or ""):gmatch("[^+]+") do mods[#mods + 1] = m end
-    return stroke(mods, entry.key or "")
-  elseif entry.kind == "menu" then
-    local path = {}
-    for part in (entry.path or ""):gmatch("[^>]+") do
-      path[#path + 1] = part:match("^%s*(.-)%s*$")
-    end
-    return menu(path)
-  else
-    return ascript(entry.script or "")
+local function parseMods(str)
+  local mods = {}
+  for m in (str or ""):gmatch("[^+]+") do mods[#mods + 1] = m end
+  return mods
+end
+
+local function parsePath(str)
+  local path = {}
+  for part in (str or ""):gmatch("[^>]+") do
+    path[#path + 1] = part:match("^%s*(.-)%s*$")
   end
+  return path
+end
+
+-- One factory for built-ins AND customs: entry -> executable function
+local function fnFor(e)
+  if e.kind == "lua" then
+    return e.fn
+  elseif e.kind == "keystroke" then
+    return stroke(parseMods(e.mods), e.key or "")
+  elseif e.kind == "menu" then
+    return menuThen(parsePath(e.path), e.fallback and ascript(e.fallback) or nil)
+  else
+    return ascript(e.script or "")
+  end
+end
+
+local PRETTY = { cmd = "⌘", shift = "⇧", ctrl = "⌃", alt = "⌥", fn = "fn" }
+local function cmdFor(e)
+  if e.kind == "lua" then return e.cmd or "Built-in action" end
+  if e.kind == "keystroke" then
+    local out = ""
+    for _, m in ipairs(parseMods(e.mods)) do out = out .. (PRETTY[m] or m) end
+    return "Keys: " .. out .. (e.key or ""):upper()
+  end
+  if e.kind == "menu" then return "Menu: " .. (e.path or "") end
+  local first = (e.script or ""):match("[^\n]*") or ""
+  if #first > 46 then first = first:sub(1, 43) .. "…" end
+  return "Script: " .. first
+end
+
+local function paramFor(e)
+  if e.kind == "keystroke" then
+    local m = e.mods or ""
+    return (#m > 0 and (m .. "+") or "") .. (e.key or "")
+  elseif e.kind == "menu" then return e.path or ""
+  elseif e.kind == "applescript" then return e.script or ""
+  end
+  return ""
 end
 
 local exact, prefixes, catalog = {}, {}, {}
 
+
 local function rebuild()
   exact, prefixes, catalog = {}, {}, {}
-  local function add(seq, desc, fn, builtin)
+  local function add(seq, desc, fn, builtin, meta)
     exact[seq] = { desc = desc, fn = fn }
     for i = 1, #seq - 1 do prefixes[seq:sub(1, i)] = true end
-    catalog[#catalog + 1] = { seq = seq, desc = desc, builtin = builtin }
+    local row = { seq = seq, desc = desc, builtin = builtin }
+    for k, v in pairs(meta or {}) do row[k] = v end
+    catalog[#catalog + 1] = row
   end
-  for _, s in ipairs(BUILTIN) do
-    if not store.disabled[s.seq] then add(s.seq, s.desc, s.fn, true) end
+  for _, b in ipairs(BUILTIN) do
+    if not store.disabled[b.seq] then
+      local r = store.renames[b.seq] or {}
+      local seq  = (r.seq and #r.seq > 0) and r.seq:lower() or b.seq
+      local desc = (r.desc and #r.desc > 0) and r.desc or b.desc
+      add(seq, desc, fnFor(b), true, {
+        orig = b.seq, kind = b.kind, luaKind = (b.kind == "lua"),
+        cmd = cmdFor(b), param = paramFor(b) })
+    end
   end
   for _, c in ipairs(store.custom) do
-    if c.seq and #c.seq > 0 then add(c.seq:lower(), c.desc or "Custom", customFn(c), false) end
+    if c.seq and #c.seq > 0 then
+      add(c.seq:lower(), c.desc or "Custom", fnFor(c), false, {
+        orig = c.seq, kind = c.kind, luaKind = false,
+        cmd = cmdFor(c), param = paramFor(c) })
+    end
   end
   table.sort(catalog, function(a, b) return a.seq < b.seq end)
 end
@@ -442,7 +475,12 @@ local function handleKey(e)
   if ExcelAlt.optDown then ExcelAlt.optAlone = false ; return false end
   if not ExcelAlt.mode then return false end
 
-  local key = hs.keycodes.map[e:getKeyCode()]
+  -- Digits by PHYSICAL key position: on AZERTY (and other layouts) the
+  -- unshifted digit row types symbols (& é " …), so layout-based lookup
+  -- would never produce "1".."0". Raw keycodes are layout-independent.
+  local DIGITS = { [18]="1",[19]="2",[20]="3",[21]="4",[23]="5",
+                   [22]="6",[26]="7",[28]="8",[25]="9",[29]="0" }
+  local key = DIGITS[e:getKeyCode()] or hs.keycodes.map[e:getKeyCode()]
   if key == "escape" then exitMode() ; return true end
   if type(key) ~= "string" or #key ~= 1 then exitMode() ; return false end
 
@@ -528,89 +566,151 @@ local MANAGER_HTML = [==[
 * { box-sizing:border-box; margin:0; font-family:-apple-system,'SF Pro Text',Helvetica,sans-serif; }
 body { background:var(--paper); color:var(--ink); padding:0 0 40px; }
 header { background:linear-gradient(180deg,var(--green2),var(--green)); color:#fff;
-  padding:18px 24px; display:flex; align-items:center; gap:14px; }
+  padding:16px 24px; display:flex; align-items:center; gap:14px; }
 header img { width:44px; height:44px; border-radius:10px; }
-header h1 { font-size:19px; font-weight:700; letter-spacing:.2px; }
+header h1 { font-size:19px; font-weight:700; }
 header p { font-size:12px; opacity:.85; margin-top:2px; }
-main { padding:20px 24px; max-width:760px; margin:0 auto; }
+main { padding:18px 24px; max-width:860px; margin:0 auto; }
 table { width:100%; border-collapse:collapse; background:#fff; border-radius:10px; overflow:hidden;
   box-shadow:0 1px 4px rgba(0,0,0,.08); }
 th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.8px;
-  color:#6b7570; padding:10px 14px; border-bottom:1px solid #e6e3da; }
-td { padding:9px 14px; font-size:13px; border-bottom:1px solid #f0ede5; }
-td.seq { font-family:'SF Mono',Menlo,monospace; font-weight:700; color:var(--green);
-  white-space:nowrap; }
+  color:#6b7570; padding:10px 12px; border-bottom:1px solid #e6e3da; }
+td { padding:8px 12px; font-size:13px; border-bottom:1px solid #f0ede5; vertical-align:middle; }
+td.seq { font-family:'SF Mono',Menlo,monospace; font-weight:700; color:var(--green); white-space:nowrap; }
 td.seq::before { content:'⌥ '; color:var(--gold); }
+td.cmd { font-size:11.5px; color:#6b7570; max-width:260px; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
 tr:hover td { background:#fbfaf6; }
 .tag { font-size:10px; padding:2px 7px; border-radius:99px; background:#eef3ee; color:#4c6355; }
 .tag.custom { background:#fdf3d5; color:#8a6a12; }
-button { border:0; border-radius:7px; padding:6px 12px; font-size:12px; cursor:pointer; }
+button { border:0; border-radius:7px; padding:6px 11px; font-size:12px; cursor:pointer; }
+button.edit { background:transparent; color:var(--green); font-weight:600; }
+button.edit:hover { background:#e9f2ec; }
 button.del { background:transparent; color:#b04a3a; }
 button.del:hover { background:#f9e9e6; }
-.addbar { display:flex; gap:8px; margin:18px 0 10px; flex-wrap:wrap; }
+.addbar { display:flex; gap:8px; margin:16px 0 6px; flex-wrap:wrap; align-items:center; }
 .addbar input, .addbar select { padding:8px 10px; border:1px solid #d8d4c8; border-radius:7px;
   font-size:13px; background:#fff; }
-#f-seq { width:80px; font-family:'SF Mono',Menlo,monospace; }
-#f-desc { flex:1; min-width:140px; }
-#f-param { flex:2; min-width:200px; }
+#f-seq { width:76px; font-family:'SF Mono',Menlo,monospace; }
+#f-desc { flex:1; min-width:130px; }
+#f-param { flex:2; min-width:190px; }
 .addbar .go { background:var(--green); color:#fff; font-weight:600; }
 .addbar .go:hover { background:var(--green2); }
-.hint { font-size:11.5px; color:#8a877d; margin-bottom:6px; }
+.addbar .cancel { background:transparent; color:#6b7570; display:none; }
+#err { display:none; color:#b04a3a; font-size:12px; margin:2px 0 6px; font-weight:600; }
+.hint { font-size:11.5px; color:#8a877d; margin-bottom:8px; }
+#ax { display:none; background:#B04A3A; color:#fff; padding:10px 24px; font-size:13px;
+  align-items:center; gap:12px; }
+#ax button { background:#fff; color:#B04A3A; font-weight:700; }
 </style></head><body>
 <header>
   <img src="CORGI_SRC" alt="">
   <div><h1>⌥XL Shortcut Manager</h1>
     <p>Tap ⌥ in Excel, then type a sequence. Changes apply instantly.</p></div>
 </header>
-<div id="ax" style="display:none; background:#B04A3A; color:#fff; padding:10px 24px;
-  font-size:13px; display:flex; align-items:center; gap:12px;">
+<div id="ax">
   <span style="flex:1">Shortcuts are OFF — macOS Accessibility permission is missing.</span>
-  <button style="background:#fff;color:#B04A3A;font-weight:700"
-    onclick="send({op:'axsettings'})">Open Accessibility Settings</button>
+  <button onclick="send({op:'axsettings'})">Open Accessibility Settings</button>
 </div>
 <main>
   <div class="addbar">
     <input id="f-seq" placeholder="hxx" maxlength="6">
     <input id="f-desc" placeholder="What it does">
-    <select id="f-kind">
+    <select id="f-kind" onchange="hintParam()">
       <option value="keystroke">Keystroke</option>
       <option value="menu">Menu path</option>
       <option value="applescript">AppleScript</option>
     </select>
-    <input id="f-param" placeholder="cmd+shift+t   ·   Format > Cells...   ·   script body">
-    <button class="go" onclick="add()">Add shortcut</button>
+    <input id="f-param" placeholder="cmd+shift+t">
+    <button class="go" id="f-save" onclick="save()">Add shortcut</button>
+    <button class="cancel" id="f-cancel" onclick="resetForm()">Cancel</button>
   </div>
-  <p class="hint">Keystroke: mods+key like <b>cmd+shift+t</b> · Menu: path like <b>Format > Column > Width...</b> · AppleScript: body runs inside a tell-Excel block. Menu paths use your Mac's Excel <b>menu bar</b> (Edit, Format, Window…) in Excel's display language — not the Windows ribbon. Deleting a built-in hides it; it can be restored by re-adding the same sequence.</p>
-  <table><thead><tr><th>Sequence</th><th>Action</th><th></th><th></th></tr></thead>
+  <p id="err"></p>
+  <p class="hint">Keystroke: <b>cmd+shift+t</b> · Menu: your Mac Excel menu bar path like <b>Edit > Clear > All</b> (in Excel's display language) · AppleScript: body runs inside a tell-Excel block. Editing a built-in makes it yours; built-ins marked ⚙ keep their smart action (only sequence and name can change).</p>
+  <table><thead><tr><th>Sequence</th><th>Action</th><th>Command</th><th></th><th></th><th></th></tr></thead>
   <tbody id="rows"></tbody></table>
 </main>
 <script>
+let editing = null;   // {orig, builtin, luaKind} while editing
+let items = [];
+
+function esc(t) { const d = document.createElement('div'); d.textContent = t == null ? '' : t; return d.innerHTML; }
+
 function render(list) {
+  items = list;
   const tb = document.getElementById('rows'); tb.innerHTML = '';
-  list.forEach(it => {
+  list.forEach((it, i) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td class="seq">' + it.seq.toUpperCase().split('').join(' ') + '</td>' +
-      '<td>' + it.desc + '</td>' +
-      '<td><span class="tag' + (it.builtin ? '' : ' custom') + '">' +
-      (it.builtin ? 'built-in' : 'custom') + '</span></td>' +
-      '<td style="text-align:right"><button class="del" onclick="del(\'' + it.seq + '\')">Remove</button></td>';
+    tr.innerHTML =
+      '<td class="seq">' + esc(it.seq.toUpperCase().split('').join(' ')) + '</td>' +
+      '<td>' + esc(it.desc) + '</td>' +
+      '<td class="cmd" title="' + esc(it.cmd) + '">' + (it.luaKind ? '⚙ ' : '') + esc(it.cmd) + '</td>' +
+      '<td><span class="tag' + (it.builtin ? '' : ' custom') + '">' + (it.builtin ? 'built-in' : 'custom') + '</span></td>' +
+      '<td><button class="edit" onclick="beginEdit(' + i + ')">Edit</button></td>' +
+      '<td style="text-align:right"><button class="del" onclick="removeIt(' + i + ')">Remove</button></td>';
     tb.appendChild(tr);
   });
 }
-function send(msg) { window.webkit.messageHandlers.xl.postMessage(msg); }
-function del(seq) { send({ op: 'delete', seq: seq }); }
-function add() {
+
+function hintParam() {
+  const k = document.getElementById('f-kind').value;
+  document.getElementById('f-param').placeholder =
+    k === 'menu' ? 'Edit > Clear > All' : k === 'applescript' ? 'clear contents selection' : 'cmd+shift+t';
+}
+
+function beginEdit(i) {
+  const it = items[i];
+  editing = { orig: it.orig, builtin: it.builtin, luaKind: !!it.luaKind };
+  document.getElementById('f-seq').value = it.seq;
+  document.getElementById('f-desc').value = it.desc;
+  document.getElementById('f-kind').value = it.luaKind ? 'keystroke' : it.kind;
+  document.getElementById('f-param').value = it.param || '';
+  document.getElementById('f-kind').disabled = it.luaKind;
+  document.getElementById('f-param').disabled = it.luaKind;
+  document.getElementById('f-save').textContent = 'Save changes';
+  document.getElementById('f-cancel').style.display = 'inline-block';
+  showErr('');
+}
+
+function resetForm() {
+  editing = null;
+  ['f-seq','f-desc','f-param'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f-kind').disabled = false;
+  document.getElementById('f-param').disabled = false;
+  document.getElementById('f-save').textContent = 'Add shortcut';
+  document.getElementById('f-cancel').style.display = 'none';
+  showErr('');
+}
+
+function showErr(t) {
+  const e = document.getElementById('err');
+  e.textContent = t; e.style.display = t ? 'block' : 'none';
+}
+
+function save() {
   const seq = document.getElementById('f-seq').value.trim().toLowerCase();
   const desc = document.getElementById('f-desc').value.trim();
   const kind = document.getElementById('f-kind').value;
   const param = document.getElementById('f-param').value.trim();
-  if (!seq || !param) return;
-  send({ op: 'add', seq: seq, desc: desc || 'Custom', kind: kind, param: param });
-  ['f-seq','f-desc','f-param'].forEach(id => document.getElementById(id).value = '');
+  if (!seq) { showErr('Sequence is required (e.g. hxx).'); return; }
+  const needsParam = !(editing && editing.luaKind);
+  if (needsParam && !param) { showErr('Command is required: keys like cmd+shift+t, a menu path, or a script.'); return; }
+  if (editing) {
+    send({ op: 'edit', orig: editing.orig, builtin: editing.builtin, luaKind: editing.luaKind,
+           seq: seq, desc: desc || 'Custom', kind: kind, param: param });
+  } else {
+    send({ op: 'add', seq: seq, desc: desc || 'Custom', kind: kind, param: param });
+  }
+  resetForm();
 }
-function setStatus(ok) {
-  document.getElementById('ax').style.display = ok ? 'none' : 'flex';
+
+function removeIt(i) {
+  const it = items[i];
+  send({ op: 'delete', seq: it.seq, orig: it.orig, builtin: it.builtin });
 }
+
+function send(msg) { window.webkit.messageHandlers.xl.postMessage(msg); }
+function setStatus(ok) { document.getElementById('ax').style.display = ok ? 'none' : 'flex'; }
 send({ op: 'load' });
 </script></body></html>
 ]==]
@@ -638,8 +738,7 @@ local function opDelete(seq)
   saveStore()
 end
 
-local function opAdd(b)
-  store.disabled[b.seq] = nil
+local function entryFrom(b)
   local entry = { seq = b.seq, desc = b.desc, kind = b.kind }
   if b.kind == "keystroke" then
     local key = b.param:match("([^+]+)$") or b.param
@@ -650,12 +749,39 @@ local function opAdd(b)
   else
     entry.script = b.param
   end
+  return entry
+end
+
+local function putCustom(entry, replacingSeq)
   local kept = {}
   for _, c in ipairs(store.custom) do
-    if c.seq:lower() ~= b.seq then kept[#kept + 1] = c end
+    local cs = c.seq:lower()
+    if cs ~= entry.seq:lower() and cs ~= (replacingSeq or ""):lower() then
+      kept[#kept + 1] = c
+    end
   end
   kept[#kept + 1] = entry
   store.custom = kept
+end
+
+local function opAdd(b)
+  store.disabled[b.seq] = nil
+  putCustom(entryFrom(b))
+  saveStore()
+end
+
+local function opEdit(b)
+  if b.builtin and b.luaKind then
+    -- smart built-ins keep their action; only sequence/name change
+    store.renames[b.orig] = { seq = b.seq, desc = b.desc }
+  elseif b.builtin then
+    -- editing a plain built-in turns it into a custom that shadows it
+    store.disabled[b.orig] = true
+    store.renames[b.orig] = nil
+    putCustom(entryFrom(b))
+  else
+    putCustom(entryFrom(b), b.orig)
+  end
   saveStore()
 end
 
@@ -673,7 +799,15 @@ local function openManager()
     if b.op == "load" then pushCatalog()
     elseif b.op == "axsettings" then
       hs.execute("open 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'")
-    elseif b.op == "delete" then opDelete(b.seq)
+    elseif b.op == "delete" then
+      if b.builtin and b.orig then
+        store.disabled[b.orig] = true
+        store.renames[b.orig] = nil
+        saveStore()
+      else
+        opDelete(b.seq)
+      end
+    elseif b.op == "edit" then opEdit(b)
     elseif b.op == "add" then opAdd(b) end
   end)
 
@@ -754,6 +888,7 @@ local function setupMenubar()
   ExcelAlt.bar:setTitle("⌥XL")
   ExcelAlt.bar:setTooltip(APPNAME .. " — Alt shortcuts for Excel")
   ExcelAlt.bar:setMenu(menubarMenu)
+  dlog("menubar: item created; icon=" .. tostring(ExcelAlt.barIcon ~= nil))
 end
 
 -- ---------------------------------------------------------------------
@@ -774,7 +909,10 @@ end
 ExcelAlt.watcher = hs.application.watcher.new(onAppEvent)
 ExcelAlt.watcher:start()
 
-setupMenubar()
+-- Menu bar item is created ONLY after launch settles: creating it during
+-- the agent->regular transform lets macOS destroy it. First creation at
+-- +2s; safety rebuilds at +6s and after permission grant.
+dlog("startup: engine v" .. ExcelAlt.version .. " loaded, menubar deferred")
 
 -- The underlying runtime may open its console or preferences window on
 -- first launch (before our own settings apply). Close anything that
@@ -821,6 +959,7 @@ pcall(function()
 end)
 
 local function grantReady()
+  dlog("accessibility granted; starting taps")
   ExcelAlt.tapsReady = true
   -- Taps created before trust was granted can be stale: rebuild them now
   -- so the first grant works immediately, without toggling permissions.
@@ -863,6 +1002,7 @@ ExcelAlt._test = {
   updateTaps   = updateTaps,
   rebuild      = rebuild,
   opAdd        = opAdd,
+  opEdit       = opEdit,
   opDelete     = opDelete,
   store        = function() return store end,
   exact        = function() return exact end,

@@ -233,6 +233,33 @@ check("deleting a custom removes it without disabling anything",
   T.exact()["hzz"] == nil and decoded.disabled ~= nil)
 
 -- =====================================================================
+print("\n[6b] AZERTY digits + editing")
+-- =====================================================================
+tapOption()
+local rd = typeKeys("h1")           -- mock maps digit keycodes to AZERTY symbols
+mock.flushTimers()
+ks = mock.log.keystrokes[#mock.log.keystrokes]
+check("H 1 fires Bold on an AZERTY layout (digits read by keycode)",
+  rd[2] == true and ks and ks.key == "b", ks and ks.key)
+
+T.opEdit({ orig = "hbs", builtin = true, luaKind = false,
+  seq = "hbb", desc = "My borders", kind = "applescript", param = "-- mine" })
+check("editing a plain built-in shadows it under the new sequence",
+  T.exact()["hbs"] == nil and T.exact()["hbb"] ~= nil and
+  T.exact()["hbb"].desc == "My borders")
+
+T.opEdit({ orig = "h0", builtin = true, luaKind = true,
+  seq = "hdd", desc = "More decimals" })
+check("renaming a smart built-in keeps its action under the new sequence",
+  T.exact()["h0"] == nil and T.exact()["hdd"] ~= nil)
+local foundCmd
+for _, row in ipairs(T.catalog()) do
+  if row.seq == "hdd" then foundCmd = row.cmd end
+end
+check("catalog exposes the command behind each shortcut",
+  type(foundCmd) == "string" and #foundCmd > 0, foundCmd)
+
+-- =====================================================================
 print("\n[7] Deferred-UI invariant (guards the v12 fix)")
 -- =====================================================================
 check("zero canvas/alert/screen calls ever executed inside a tap callback",
