@@ -21,7 +21,7 @@
 
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
-  version    = "1.6",
+  version    = "1.7",
   enabled    = true,
   mode       = false,
   seq        = "",
@@ -235,7 +235,7 @@ local BUILTIN = {
   { seq = "hic", desc = "Insert column",           fn = ascript("insert into range (entire column of selection) shift shift to right") },
   { seq = "hdr", desc = "Delete row",              fn = ascript("delete range (entire row of selection) shift shift up") },
   { seq = "hdc", desc = "Delete column",           fn = ascript("delete range (entire column of selection) shift shift to left") },
-  { seq = "hea", desc = "Clear all",               fn = ascript("clear contents selection\nclear formats selection") },
+  { seq = "hea", desc = "Clear all",               fn = ascript("try\nclear range selection\non error\nclear contents selection\nclear formats selection\nend try") },
   { seq = "hec", desc = "Clear contents",          fn = ascript("clear contents selection") },
   { seq = "hef", desc = "Clear formats",           fn = ascript("clear formats selection") },
 
@@ -623,7 +623,10 @@ end
 
 local function openManager()
   if ExcelAlt.manager then
-    ExcelAlt.manager:show() ; ExcelAlt.manager:bringToFront()
+    ExcelAlt.manager:show()
+    pcall(function()
+      hs.application.applicationForPID(hs.processInfo.processID):activate(true)
+    end)
     pushCatalog()
     return
   end
@@ -650,14 +653,18 @@ local function openManager()
   ExcelAlt.manager = hs.webview.new(
       { x = scr.x + (scr.w - W) / 2, y = scr.y + (scr.h - H) / 2, w = W, h = H },
       { developerExtrasEnabled = false }, ExcelAlt.ucc)
-    :windowStyle({ "titled", "closable", "resizable" })
+    :windowStyle({ "titled", "closable", "resizable", "miniaturizable" })
     :windowTitle(APPNAME .. " Shortcut Manager")
     :allowTextEntry(true)
     :deleteOnClose(false)
     :html(html)
   pcall(function() ExcelAlt.manager:level(hs.drawing.windowLevels.normal) end)
   ExcelAlt.manager:show()
-  ExcelAlt.manager:bringToFront()   -- NOT bringToFront(true): that pins on top
+  -- NEVER call bringToFront() here: hs.webview implements it by raising the
+  -- window to floating level, which pins it above every other app.
+  pcall(function()
+    hs.application.applicationForPID(hs.processInfo.processID):activate(true)
+  end)
 end
 
 -- ---------------------------------------------------------------------
@@ -753,10 +760,19 @@ hs.timer.doAfter(3, hideEngineWindows)
 
 -- The Shortcut Manager is the app's visible face: open it on launch so
 -- the person always lands on the shortcut table, not engine windows.
+-- Dock icon clicks reopen it (and never the engine console).
+pcall(function() hs.openConsoleOnDockClick(false) end)
+hs.dockIconClickCallback = function() pcall(openManager) end
 pcall(openManager)
 
 local function grantReady()
   ExcelAlt.tapsReady = true
+  -- Taps created before trust was granted can be stale: rebuild them now
+  -- so the first grant works immediately, without toggling permissions.
+  pcall(function() ExcelAlt.flagsTap:stop() end)
+  pcall(function() ExcelAlt.keyTap:stop() end)
+  ExcelAlt.flagsTap = hs.eventtap.new({ hs.eventtap.event.types.flagsChanged }, safely(handleFlags))
+  ExcelAlt.keyTap   = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, safely(handleKey))
   updateTaps()
   -- With permission granted, window enumeration works: sweep away any
   -- engine console/preferences window that appeared during first run.
@@ -771,7 +787,7 @@ if hs.accessibilityState(true) then
 else
   hs.alert.show(APPNAME .. " needs Accessibility permission\n(System Settings → Privacy & Security)", 4)
   -- Taps opened before permission never attach; poll and start once granted
-  ExcelAlt.permTimer = hs.timer.doEvery(2, function()
+  ExcelAlt.permTimer = hs.timer.doEvery(1, function()
     if hs.accessibilityState() then
       ExcelAlt.permTimer:stop()
       ExcelAlt.permTimer = nil

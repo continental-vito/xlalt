@@ -36,7 +36,7 @@ int main(void) {
   CFRelease(cfgs);
 
   setb("MJShowMenuIconKey", false);
-  setb("MJShowDockIconKey", false);
+  setb("MJShowDockIconKey", true);   /* regular app: dock icon + top-left menus */
   setb("MJShowWindowAtLaunchKey", false);
   setb("MJKeepConsoleOnTopKey", false);
   setb("SUEnableAutomaticChecks", false);
