@@ -21,7 +21,7 @@
 
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
-  version    = "1.4",
+  version    = "1.6",
   enabled    = true,
   mode       = false,
   seq        = "",
@@ -524,6 +524,12 @@ button.del:hover { background:#f9e9e6; }
   <div><h1>⌥XL Shortcut Manager</h1>
     <p>Tap ⌥ in Excel, then type a sequence. Changes apply instantly.</p></div>
 </header>
+<div id="ax" style="display:none; background:#B04A3A; color:#fff; padding:10px 24px;
+  font-size:13px; display:flex; align-items:center; gap:12px;">
+  <span style="flex:1">Shortcuts are OFF — macOS Accessibility permission is missing.</span>
+  <button style="background:#fff;color:#B04A3A;font-weight:700"
+    onclick="send({op:'axsettings'})">Open Accessibility Settings</button>
+</div>
 <main>
   <div class="addbar">
     <input id="f-seq" placeholder="hxx" maxlength="6">
@@ -564,6 +570,9 @@ function add() {
   send({ op: 'add', seq: seq, desc: desc || 'Custom', kind: kind, param: param });
   ['f-seq','f-desc','f-param'].forEach(id => document.getElementById(id).value = '');
 }
+function setStatus(ok) {
+  document.getElementById('ax').style.display = ok ? 'none' : 'flex';
+}
 send({ op: 'load' });
 </script></body></html>
 ]==]
@@ -571,6 +580,7 @@ send({ op: 'load' });
 local function pushCatalog()
   if not ExcelAlt.manager then return end
   ExcelAlt.manager:evaluateJavaScript("render(" .. hs.json.encode(catalog) .. ")")
+  ExcelAlt.manager:evaluateJavaScript("setStatus(" .. tostring(hs.accessibilityState() == true) .. ")")
 end
 
 local function saveStore()
@@ -620,6 +630,8 @@ local function openManager()
   ExcelAlt.ucc = hs.webview.usercontent.new("xl"):setCallback(function(msg)
     local b = msg.body
     if b.op == "load" then pushCatalog()
+    elseif b.op == "axsettings" then
+      hs.execute("open 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'")
     elseif b.op == "delete" then opDelete(b.seq)
     elseif b.op == "add" then opAdd(b) end
   end)
@@ -739,9 +751,18 @@ hideEngineWindows()
 hs.timer.doAfter(1, hideEngineWindows)
 hs.timer.doAfter(3, hideEngineWindows)
 
+-- The Shortcut Manager is the app's visible face: open it on launch so
+-- the person always lands on the shortcut table, not engine windows.
+pcall(openManager)
+
 local function grantReady()
   ExcelAlt.tapsReady = true
   updateTaps()
+  -- With permission granted, window enumeration works: sweep away any
+  -- engine console/preferences window that appeared during first run.
+  hideEngineWindows()
+  hs.timer.doAfter(1, hideEngineWindows)
+  pcall(pushCatalog)
   hs.alert.show(APPNAME .. " ready — tap ⌥ in Excel", 1.5)
 end
 

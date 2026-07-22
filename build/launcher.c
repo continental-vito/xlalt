@@ -38,6 +38,7 @@ int main(void) {
   setb("MJShowMenuIconKey", false);
   setb("MJShowDockIconKey", false);
   setb("MJShowWindowAtLaunchKey", false);
+  setb("MJKeepConsoleOnTopKey", false);
   setb("SUEnableAutomaticChecks", false);
   setb("HSUploadCrashData", false);
   CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication);
