@@ -21,8 +21,9 @@
 
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
-  version    = "2.0",
+  version    = "2.1",
   enabled    = true,
+  overlayOn  = true,   -- KeyTips panel; expert users can switch it off
   mode       = false,
   seq        = "",
   excelFront = false,  -- cached by the app watcher; NEVER queried per-event
@@ -368,6 +369,7 @@ end
 
 local function overlayShow()
   overlayHide()
+  if not ExcelAlt.overlayOn then return end
   local hints = {}
   for _, item in ipairs(catalog) do
     if item.seq:sub(1, #ExcelAlt.seq) == ExcelAlt.seq then
@@ -599,6 +601,11 @@ button.del:hover { background:#f9e9e6; }
 .addbar .cancel { background:transparent; color:#6b7570; display:none; }
 #err { display:none; color:#b04a3a; font-size:12px; margin:2px 0 6px; font-weight:600; }
 .hint { font-size:11.5px; color:#8a877d; margin-bottom:8px; }
+.toggle { display:flex; align-items:center; gap:12px; background:#fff; border:1px solid #e6e3da;
+  border-radius:10px; padding:11px 14px; margin-top:14px; }
+.toggle .sw { display:flex; align-items:center; gap:9px; font-size:13px; font-weight:600; cursor:pointer; }
+.toggle input { width:17px; height:17px; accent-color:var(--green); cursor:pointer; }
+.toggle .note { font-size:11.5px; color:#8a877d; }
 #ax { display:none; background:#B04A3A; color:#fff; padding:10px 24px; font-size:13px;
   align-items:center; gap:12px; }
 #ax button { background:#fff; color:#B04A3A; font-weight:700; }
@@ -613,6 +620,13 @@ button.del:hover { background:#f9e9e6; }
   <button onclick="send({op:'axsettings'})">Open Accessibility Settings</button>
 </div>
 <main>
+  <div class="toggle">
+    <label class="sw">
+      <input type="checkbox" id="ovl" onchange="send({op:'overlay', on: this.checked})">
+      <span>Show KeyTips overlay in Excel</span>
+    </label>
+    <span class="note">Off = no popup panel; sequences still work (for experts who know them by heart).</span>
+  </div>
   <div class="addbar">
     <input id="f-seq" placeholder="hxx" maxlength="6">
     <input id="f-desc" placeholder="What it does">
@@ -711,15 +725,19 @@ function removeIt(i) {
 
 function send(msg) { window.webkit.messageHandlers.xl.postMessage(msg); }
 function setStatus(ok) { document.getElementById('ax').style.display = ok ? 'none' : 'flex'; }
+function setOverlay(on) { document.getElementById('ovl').checked = !!on; }
 send({ op: 'load' });
 </script></body></html>
 ]==]
 
+function pushCatalogRef() end   -- forward declaration (set below)
 local function pushCatalog()
   if not ExcelAlt.manager then return end
   ExcelAlt.manager:evaluateJavaScript("render(" .. hs.json.encode(catalog) .. ")")
   ExcelAlt.manager:evaluateJavaScript("setStatus(" .. tostring(hs.accessibilityState() == true) .. ")")
+  ExcelAlt.manager:evaluateJavaScript("setOverlay(" .. tostring(ExcelAlt.overlayOn == true) .. ")")
 end
+pushCatalogRef = pushCatalog
 
 local function saveStore()
   writeJSON(STORE, store)
@@ -797,6 +815,10 @@ local function openManager()
   ExcelAlt.ucc = hs.webview.usercontent.new("xl"):setCallback(function(msg)
     local b = msg.body
     if b.op == "load" then pushCatalog()
+    elseif b.op == "overlay" then
+      ExcelAlt.overlayOn = (b.on == true)
+      writeJSON(PREFS, { enabled = ExcelAlt.enabled, overlayOn = ExcelAlt.overlayOn })
+      if not ExcelAlt.overlayOn then pcall(overlayHide) end
     elseif b.op == "axsettings" then
       hs.execute("open 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'")
     elseif b.op == "delete" then
@@ -848,8 +870,15 @@ local function menubarMenu()
     { title = ExcelAlt.enabled and "✓ Shortcuts enabled" or "Shortcuts paused",
       fn = function()
         ExcelAlt.enabled = not ExcelAlt.enabled
-        writeJSON(PREFS, { enabled = ExcelAlt.enabled })
+        writeJSON(PREFS, { enabled = ExcelAlt.enabled, overlayOn = ExcelAlt.overlayOn })
         updateTaps()
+      end },
+    { title = ExcelAlt.overlayOn and "✓ Show KeyTips overlay" or "KeyTips overlay hidden",
+      fn = function()
+        ExcelAlt.overlayOn = not ExcelAlt.overlayOn
+        writeJSON(PREFS, { enabled = ExcelAlt.enabled, overlayOn = ExcelAlt.overlayOn })
+        if not ExcelAlt.overlayOn then overlayHide() end
+        pcall(pushCatalogRef)
       end },
     { title = "-" },
     { title = "Shortcut Manager…", fn = openManager },
@@ -895,7 +924,10 @@ end
 -- Startup
 -- ---------------------------------------------------------------------
 local prefs = readJSON(PREFS)
-if prefs and prefs.enabled == false then ExcelAlt.enabled = false end
+if prefs then
+  if prefs.enabled == false then ExcelAlt.enabled = false end
+  if prefs.overlayOn == false then ExcelAlt.overlayOn = false end
+end
 
 ExcelAlt.flagsTap = hs.eventtap.new({ hs.eventtap.event.types.flagsChanged }, safely(handleFlags))
 ExcelAlt.keyTap   = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, safely(handleKey))
@@ -912,7 +944,9 @@ ExcelAlt.watcher:start()
 -- Menu bar item is created ONLY after launch settles: creating it during
 -- the agent->regular transform lets macOS destroy it. First creation at
 -- +2s; safety rebuilds at +6s and after permission grant.
-dlog("startup: engine v" .. ExcelAlt.version .. " loaded, menubar deferred")
+dlog("startup: engine v" .. ExcelAlt.version .. " loaded from " ..
+     tostring(hs.processInfo.bundlePath or "?") .. " | configdir=" ..
+     tostring(hs.configdir) .. " | menubar deferred")
 
 -- The underlying runtime may open its console or preferences window on
 -- first launch (before our own settings apply). Close anything that

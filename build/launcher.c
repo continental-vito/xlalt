@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 static void setb(const char *k, Boolean v) {
   CFStringRef ks = CFStringCreateWithCString(NULL, k, kCFStringEncodingUTF8);
@@ -42,6 +43,26 @@ int main(void) {
   setb("SUEnableAutomaticChecks", false);
   setb("HSUploadCrashData", false);
   CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication);
+
+  /* Robust config delivery: cfprefsd may ignore or cache MJConfigFile
+   * written by this short-lived process, and older installs can leave a
+   * stale config dir (~/.hammerspoon or a custom folder) that wins. So we
+   * ALSO copy our init.lua into the runtime's default config directory and
+   * point the preference at that copy. Whichever path the engine chooses,
+   * it runs our code. */
+  const char *home = getenv("HOME");
+  if (home) {
+    char defdir[PATH_MAX], defcfg[PATH_MAX], cmd[PATH_MAX * 3];
+    snprintf(defdir, sizeof defdir, "%s/.hammerspoon", home);
+    mkdir(defdir, 0755);
+    snprintf(defcfg, sizeof defcfg, "%s/init.lua", defdir);
+    snprintf(cmd, sizeof cmd, "/bin/cp -f '%s' '%s' 2>/dev/null", cfg, defcfg);
+    system(cmd);
+    /* Remove stale Spoons/engine files from earlier experiments so they
+     * cannot shadow ours. */
+    snprintf(cmd, sizeof cmd, "/bin/rm -f '%s/engine.lua' 2>/dev/null", defdir);
+    system(cmd);
+  }
 
   char core[PATH_MAX];
   snprintf(core, sizeof core, "%s/MacOS/ExcelAltCore", contents);
