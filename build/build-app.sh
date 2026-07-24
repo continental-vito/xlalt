@@ -10,7 +10,7 @@ HS_URL="https://github.com/Hammerspoon/hammerspoon/releases/download/${HS_VERSIO
 BID="com.corgianalyst.excel-alt-shortcuts"
 XL_VERSION="${XL_VERSION:-2.5}"
 XL_BUILD="${XL_BUILD:-1}"
-SPARKLE_PUBKEY="vakz3ZyBRAao6ypysZA2H1BX9/1SEjrfSHhzpKikKlI="
+SPARKLE_PUBKEY="c2aHOy058alqEV8VJ/7MzioCtONcOmQWU0Df0LiMGac="
 
 rm -rf dist && mkdir -p dist/work
 echo "→ Downloading engine ${HS_VERSION}"

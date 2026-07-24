@@ -40,11 +40,13 @@ jobs:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -e
-          KEYFILE=build/sparkle_ed25519_key.pem
-          if [ -n "$SPARKLE_PRIVATE_KEY" ]; then
-            printf '%s' "$SPARKLE_PRIVATE_KEY" > /tmp/sk.pem; KEYFILE=/tmp/sk.pem
+          # Public repo: the key lives ONLY in the SPARKLE_PRIVATE_KEY secret.
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "SPARKLE_PRIVATE_KEY secret missing — skipping appcast (in-app updates will not see this release)"
+            exit 0
           fi
-          if [ ! -f "$KEYFILE" ]; then echo "no signing key; skipping appcast"; exit 0; fi
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > /tmp/sk.pem
+          KEYFILE=/tmp/sk.pem
           VER="${TAG#v}"
           BUILD="${{ github.run_number }}"
           SIG=$(openssl pkeyutl -sign -inkey "$KEYFILE" -rawin -in dist/ExcelAlt-update.zip | base64)
