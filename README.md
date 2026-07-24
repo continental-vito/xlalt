@@ -9,13 +9,13 @@
 Tap the **⌥ Option** key in Excel, then type the sequence you already know from Windows.
 `H O I` autofits · `H V V` pastes values · `H B A` draws all borders · `W V G` toggles gridlines
 
-### [⬇ Download for macOS](https://github.com/vitodelcambio/xlalt/releases/latest/download/XL.dmg)
+### [⬇ Download for macOS](https://github.com/continental-vito/xlalt/releases/latest/download/XL.dmg)
 
 <sub>Apple Silicon &amp; Intel · macOS 12+ · free &amp; open source</sub>
 
-[![Downloads](https://img.shields.io/github/downloads/vitodelcambio/xlalt/total?label=downloads&color=0F6A3F)](https://github.com/vitodelcambio/xlalt/releases)
-[![Latest release](https://img.shields.io/github/v/release/vitodelcambio/xlalt?label=version&color=1F8A55)](https://github.com/vitodelcambio/xlalt/releases/latest)
-[![Tests](https://img.shields.io/github/actions/workflow/status/vitodelcambio/xlalt/ci.yml?label=tests)](https://github.com/vitodelcambio/xlalt/actions)
+[![Downloads](https://img.shields.io/github/downloads/continental-vito/xlalt/total?label=downloads&color=0F6A3F)](https://github.com/continental-vito/xlalt/releases)
+[![Latest release](https://img.shields.io/github/v/release/continental-vito/xlalt?label=version&color=1F8A55)](https://github.com/continental-vito/xlalt/releases/latest)
+[![Tests](https://img.shields.io/github/actions/workflow/status/continental-vito/xlalt/ci.yml?label=tests)](https://github.com/continental-vito/xlalt/actions)
 [![License](https://img.shields.io/badge/license-MIT-black)](LICENSE)
 
 </div>
@@ -28,7 +28,7 @@ Excel's ribbon shortcuts are muscle memory for anyone who learned the app on Win
 
 ## Install
 
-1. **[Download XL.dmg](https://github.com/vitodelcambio/xlalt/releases/latest/download/XL.dmg)**, open it, drag **ExcelAlt** into Applications.
+1. **[Download XL.dmg](https://github.com/continental-vito/xlalt/releases/latest/download/XL.dmg)**, open it, drag **ExcelAlt** into Applications.
 2. Open it. First launch only: macOS blocks apps that aren't notarized — go to **System Settings → Privacy &amp; Security** and click **Open Anyway**.
 3. Grant **Accessibility** when the app asks. Shortcuts activate immediately.
 4. Open Excel, tap **⌥**, start typing sequences.
