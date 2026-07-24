@@ -259,6 +259,21 @@ end
 check("catalog exposes the command behind each shortcut",
   type(foundCmd) == "string" and #foundCmd > 0, foundCmd)
 
+tapOption()
+typeKeys("wvg")
+mock.flushTimers()
+check("W V G toggles gridlines via AppleScript",
+  lastScript():find("display gridlines of active window") ~= nil, lastScript())
+
+ExcelAlt.overlayOn = false
+local nAlerts = #mock.log.alerts
+tapOption()
+typeKeys("hoi")
+mock.flushTimers()
+check("overlay OFF: action fires but no confirmation alert",
+  lastScript():find("autofit entire column") ~= nil and #mock.log.alerts == nAlerts)
+ExcelAlt.overlayOn = true
+
 -- =====================================================================
 print("\n[7] Deferred-UI invariant (guards the v12 fix)")
 -- =====================================================================

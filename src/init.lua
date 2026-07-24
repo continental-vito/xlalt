@@ -21,7 +21,7 @@
 
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
-  version    = "2.1",
+  version    = "2.2",
   enabled    = true,
   overlayOn  = true,   -- KeyTips panel; expert users can switch it off
   mode       = false,
@@ -265,6 +265,7 @@ local BUILTIN = {
   { seq = "agg", desc = "Group rows/columns",   kind = "applescript", script = "group entire row of selection" },
   { seq = "agu", desc = "Ungroup",              kind = "applescript", script = "ungroup entire row of selection" },
 
+  { seq = "wvg", desc = "Toggle gridlines",     kind = "applescript", script = "set display gridlines of active window to not (display gridlines of active window)" },
   { seq = "wff", desc = "Freeze panes (toggle)",kind = "applescript", script = "set freeze panes of active window to not (freeze panes of active window)" },
   { seq = "wfu", desc = "Unfreeze panes",       kind = "applescript", script = "set freeze panes of active window to false" },
 }
@@ -493,7 +494,7 @@ local function handleKey(e)
   local hit = exact[ExcelAlt.seq]
   if hit then
     exitMode()
-    say(hit.desc, 0.8)
+    if ExcelAlt.overlayOn then say(hit.desc, 0.8) end   -- expert mode: silent success
     hs.timer.doAfter(0.05, hit.fn)   -- action runs OUTSIDE the tap callback
     return true
   elseif prefixes[ExcelAlt.seq] then
@@ -940,6 +941,19 @@ end
 
 ExcelAlt.watcher = hs.application.watcher.new(onAppEvent)
 ExcelAlt.watcher:start()
+
+-- If the status item was ever ⌘-dragged off the menu bar or hidden by a
+-- menu-bar manager, macOS persists "NSStatusItem Visible…=false" in this
+-- app's preferences and every future item is created INVISIBLE (creation
+-- still succeeds — matching our logs exactly). Purge any such flags.
+pcall(function()
+  for _, k in ipairs(hs.settings.getKeys() or {}) do
+    if k:find("^NSStatusItem Visible") then
+      dlog("menubar: clearing hidden-state pref '" .. k .. "'")
+      hs.settings.clear(k)
+    end
+  end
+end)
 
 -- Menu bar item is created ONLY after launch settles: creating it during
 -- the agent->regular transform lets macOS destroy it. First creation at

@@ -277,6 +277,7 @@ hs.image = { imageFromPath = function(_) return nil end }
 hs.base64 = { encode = function(s) return "b64" end }
 hs.processInfo = { resourcePath = "/tmp/xl-test-resources",
                    bundleID = "com.corgianalyst.excel-alt-shortcuts" }
+hs.settings = { getKeys = function() return {} end, clear = function(_) end }
 hs.hotkey = { new = function(mods, key, fn)
   return { enable = function() end, disable = function() end }
 end }

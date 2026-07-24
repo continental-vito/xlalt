@@ -42,6 +42,20 @@ int main(void) {
   setb("MJKeepConsoleOnTopKey", false);
   setb("SUEnableAutomaticChecks", false);
   setb("HSUploadCrashData", false);
+  /* Purge persisted "status item hidden" flags: if the item was ever
+   * dragged off the menu bar, macOS keeps NSStatusItem Visible=false and
+   * silently hides every future item this bundle creates. */
+  CFArrayRef klist = CFPreferencesCopyKeyList(
+      CFSTR("com.corgianalyst.excel-alt-shortcuts"),
+      kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+  if (klist) {
+    for (CFIndex i = 0; i < CFArrayGetCount(klist); i++) {
+      CFStringRef k = CFArrayGetValueAtIndex(klist, i);
+      if (CFStringHasPrefix(k, CFSTR("NSStatusItem Visible")))
+        CFPreferencesSetAppValue(k, NULL, kCFPreferencesCurrentApplication);
+    }
+    CFRelease(klist);
+  }
   CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication);
 
   /* Robust config delivery: cfprefsd may ignore or cache MJConfigFile
