@@ -21,7 +21,7 @@
 
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
-  version    = "2.3",
+  version    = "2.4",
   enabled    = true,
   overlayOn  = true,   -- KeyTips panel; expert users can switch it off
   mode       = false,
@@ -927,7 +927,10 @@ local function setupMenubar()
     pcall(function() ExcelAlt.bar:delete() end)
     ExcelAlt.bar = nil
   end
-  ExcelAlt.bar = hs.menubar.new()
+  -- Fresh autosave identity sidesteps any per-item state macOS persists
+  -- (older engines accept only the first argument; fall back cleanly).
+  local okNew, bar = pcall(hs.menubar.new, true, "xl" .. tostring(os.time()))
+  ExcelAlt.bar = (okNew and bar) or hs.menubar.new()
   if not ExcelAlt.bar then dlog("menubar: hs.menubar.new() returned nil") ; return end
   local p = hs.processInfo.resourcePath .. "/xl-menubar@2x.png"
   if fileExists(p) then
@@ -956,6 +959,20 @@ local function setupMenubar()
       tostring(okI and inBar),
       (okF and fr) and string.format("(%.0f,%.0f %.0fx%.0f)", fr.x, fr.y, fr.w, fr.h) or "n/a",
       scr.w, scr.h))
+    -- Zero-height frame = window never laid out into the bar: force a
+    -- remove/return cycle, which makes the status bar lay it out afresh.
+    if okF and fr and fr.h == 0 then
+      dlog("menubar: zero-height layout; forcing remove/return re-layout")
+      pcall(function() ExcelAlt.bar:removeFromMenuBar() end)
+      hs.timer.doAfter(0.3, function()
+        pcall(function() ExcelAlt.bar:returnToMenuBar() end)
+        hs.timer.doAfter(0.5, function()
+          local _, fr2 = pcall(function() return ExcelAlt.bar and ExcelAlt.bar:frame() end)
+          dlog("menubar: after re-layout frame=" ..
+            (fr2 and string.format("(%.0f,%.0f %.0fx%.0f)", fr2.x, fr2.y, fr2.w, fr2.h) or "n/a"))
+        end)
+      end)
+    end
   end)
 end
 
@@ -986,7 +1003,7 @@ ExcelAlt.watcher:start()
 -- still succeeds — matching our logs exactly). Purge any such flags.
 pcall(function()
   for _, k in ipairs(hs.settings.getKeys() or {}) do
-    if k:find("^NSStatusItem Visible") then
+    if k:find("^NSStatusItem") then
       dlog("menubar: clearing hidden-state pref '" .. k .. "'")
       hs.settings.clear(k)
     end
@@ -1077,6 +1094,28 @@ local function grantReady()
   hs.alert.show(APPNAME .. " ready — tap ⌥ in Excel", 1.5)
 end
 
+-- Live trust tracking: grant activates taps in place (no restart); revoke
+-- stops them and brings the red banner back in the manager immediately.
+function refreshTrust()
+  local trusted = hs.accessibilityState() == true
+  if trusted and not ExcelAlt.tapsReady then
+    grantReady()
+  elseif (not trusted) and ExcelAlt.tapsReady then
+    ExcelAlt.tapsReady = false
+    updateTaps()
+    dlog("accessibility revoked; taps stopped, banner restored")
+  end
+  pcall(pushCatalog)
+end
+
+-- macOS broadcasts this notification whenever Accessibility grants change
+pcall(function()
+  ExcelAlt.axWatch = hs.distributednotifications.new(function()
+    hs.timer.doAfter(0.5, refreshTrust)
+  end, "com.apple.accessibility.api")
+  ExcelAlt.axWatch:start()
+end)
+
 if hs.accessibilityState(true) then
   grantReady()
 else
@@ -1086,19 +1125,7 @@ else
     if hs.accessibilityState() then
       ExcelAlt.permTimer:stop()
       ExcelAlt.permTimer = nil
-      -- A running process caches its trust state: taps granted mid-run
-      -- often refuse to attach until relaunch (the "toggle it five times"
-      -- syndrome). Restart ourselves once, automatically — the fresh
-      -- process starts fully trusted and works on the first toggle.
-      dlog("accessibility granted at runtime; self-relaunching for clean trust")
-      hs.alert.show(APPNAME .. ": permission granted — restarting…", 1.2)
-      local bp = hs.processInfo.bundlePath
-      if bp then
-        os.execute("(/bin/sleep 1; /usr/bin/open '" .. bp .. "') >/dev/null 2>&1 &")
-        hs.timer.doAfter(0.6, function() os.exit() end)
-      else
-        grantReady()
-      end
+      refreshTrust()
     end
   end)
 end

@@ -51,7 +51,7 @@ int main(void) {
   if (klist) {
     for (CFIndex i = 0; i < CFArrayGetCount(klist); i++) {
       CFStringRef k = CFArrayGetValueAtIndex(klist, i);
-      if (CFStringHasPrefix(k, CFSTR("NSStatusItem Visible")))
+      if (CFStringHasPrefix(k, CFSTR("NSStatusItem")))
         CFPreferencesSetAppValue(k, NULL, kCFPreferencesCurrentApplication);
     }
     CFRelease(klist);
