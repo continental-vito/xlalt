@@ -13,6 +13,11 @@ Tap the **⌥ Option** key in Excel, then type the sequence you already know fro
 
 <sub>Apple Silicon &amp; Intel · macOS 12+ · free &amp; open source</sub>
 
+[![Downloads](https://img.shields.io/github/downloads/vitodelcambio/xlalt/total?label=downloads&color=0F6A3F)](https://github.com/vitodelcambio/xlalt/releases)
+[![Latest release](https://img.shields.io/github/v/release/vitodelcambio/xlalt?label=version&color=1F8A55)](https://github.com/vitodelcambio/xlalt/releases/latest)
+[![Tests](https://img.shields.io/github/actions/workflow/status/vitodelcambio/xlalt/ci.yml?label=tests)](https://github.com/vitodelcambio/xlalt/actions)
+[![License](https://img.shields.io/badge/license-MIT-black)](LICENSE)
+
 </div>
 
 ---
