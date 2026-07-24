@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+<channel><title>⌥XL</title>
+<item>
+<title>Version 2.5</title>
+<sparkle:version>13</sparkle:version>
+<sparkle:shortVersionString>2.5</sparkle:shortVersionString>
+<sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
+<enclosure url="https://github.com/vitodelcambio/xl/releases/download/v2.5/ExcelAlt-update.zip" length="9977164" type="application/octet-stream" sparkle:edSignature="/pTzb5HrGHR3E7Ppkbu3bx//ydudYOy+net7673cIPhMq5+BarGODzOAoMNdDzH4q7MduHW6BiO7lOIZSb3MCg=="/>
+</item>
+</channel></rss>
