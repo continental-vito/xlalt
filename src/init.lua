@@ -21,7 +21,7 @@
 
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
-  version    = "2.4",
+  version    = "2.5",
   enabled    = true,
   overlayOn  = true,   -- KeyTips panel; expert users can switch it off
   mode       = false,
@@ -602,6 +602,11 @@ button.del:hover { background:#f9e9e6; }
 .addbar .cancel { background:transparent; color:#6b7570; display:none; }
 #err { display:none; color:#b04a3a; font-size:12px; margin:2px 0 6px; font-weight:600; }
 .hint { font-size:11.5px; color:#8a877d; margin-bottom:8px; }
+.guide { background:#fff; border:1px solid #e6e3da; border-radius:10px; padding:10px 14px; margin-bottom:12px; }
+.guide summary { font-size:12.5px; font-weight:700; color:var(--green); cursor:pointer; }
+.guide .g p { font-size:12px; color:#4a4f4b; margin:9px 0 0; line-height:1.55; }
+.guide code { background:#f2efe7; border-radius:4px; padding:1px 5px; font-family:'SF Mono',Menlo,monospace; font-size:11px; }
+.guide .gnote { color:#8a877d; font-size:11.5px; }
 .toggle { display:flex; align-items:center; justify-content:space-between; gap:14px; background:#fff;
   border:1px solid #e6e3da; border-radius:10px; padding:11px 14px; margin-top:14px; }
 .toggle .sw { display:flex; align-items:center; gap:9px; font-size:13px; font-weight:600; cursor:pointer; }
@@ -647,7 +652,19 @@ button.del:hover { background:#f9e9e6; }
     <button class="cancel" id="f-cancel" onclick="resetForm()">Cancel</button>
   </div>
   <p id="err"></p>
-  <p class="hint">Keystroke: <b>cmd+shift+t</b> · Menu: your Mac Excel menu bar path like <b>Edit > Clear > All</b> (in Excel's display language) · AppleScript: body runs inside a tell-Excel block. Editing a built-in makes it yours; built-ins marked ⚙ keep their smart action (only sequence and name can change).</p>
+  <details class="guide">
+    <summary>How to create shortcuts — the three methods</summary>
+    <div class="g">
+      <p><b>1 · Keystroke</b> — replays a key combo Excel already understands. Write modifiers + key joined by <code>+</code>: <code>cmd+shift+t</code>, <code>ctrl+cmd+v</code>, <code>cmd+b</code>. Best when Excel has a native Mac shortcut and you just want it behind an ⌥ sequence.</p>
+      <p><b>2 · Menu path</b> — clicks an item in Excel's <i>menu bar at the top of the screen</i> (not the ribbon). Write the path with <code>&gt;</code>: <code>Edit &gt; Clear &gt; All</code>, <code>Format &gt; Column &gt; Width...</code>. Must match your Excel's display language exactly. Best for commands with no keyboard shortcut.</p>
+      <p><b>3 · AppleScript</b> — the most powerful: macOS's automation language, addressing Excel's objects directly. Your text runs inside <code>tell application "Microsoft Excel" … end tell</code>, so write only the action. <code>selection</code> = selected cells; <code>active sheet</code>/<code>active window</code> mean what they say. Examples:<br>
+      <code>set font size of font object of selection to 14</code><br>
+      <code>set row height of entire row of selection to 30</code><br>
+      <code>set zoom of active window to 150</code><br>
+      Explore everything Excel can do: open <b>Script Editor</b> → File → Open Dictionary → Microsoft Excel. Test a line there first, then paste it here.</p>
+      <p class="gnote">Editing a built-in makes it yours; built-ins marked ⚙ keep their smart action (only sequence and name can change).</p>
+    </div>
+  </details>
   <table><thead><tr><th>Sequence</th><th>Action</th><th>Command</th><th></th><th></th><th></th></tr></thead>
   <tbody id="rows"></tbody></table>
 </main>
@@ -872,6 +889,7 @@ local function openManager()
     :deleteOnClose(false)
     :html(html)
   pcall(function() ExcelAlt.manager:level(hs.drawing.windowLevels.normal) end)
+  pcall(function() ExcelAlt.manager:shadow(true) end)   -- standard macOS window shadow
   ExcelAlt.manager:show()
   -- NEVER call bringToFront() here: hs.webview implements it by raising the
   -- window to floating level, which pins it above every other app.

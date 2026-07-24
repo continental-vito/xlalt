@@ -8,6 +8,9 @@ cd "$(dirname "$0")/.."
 HS_VERSION="1.1.1"
 HS_URL="https://github.com/Hammerspoon/hammerspoon/releases/download/${HS_VERSION}/Hammerspoon-${HS_VERSION}.zip"
 BID="com.corgianalyst.excel-alt-shortcuts"
+XL_VERSION="${XL_VERSION:-2.5}"
+XL_BUILD="${XL_BUILD:-1}"
+SPARKLE_PUBKEY="vakz3ZyBRAao6ypysZA2H1BX9/1SEjrfSHhzpKikKlI="
 
 rm -rf dist && mkdir -p dist/work
 echo "→ Downloading engine ${HS_VERSION}"
@@ -25,12 +28,22 @@ echo "→ Rebranding bundle"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" "$APP/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Delete :LSUIElement" "$APP/Contents/Info.plist" 2>/dev/null || true
-/usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$APP/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $XL_VERSION" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $XL_BUILD" "$APP/Contents/Info.plist"
+# In-app updates: feed + EdDSA public key (manual "Check for updates")
+/usr/libexec/PlistBuddy -c "Set :SUFeedURL https://raw.githubusercontent.com/vitodelcambio/xl/main/appcast.xml" "$APP/Contents/Info.plist" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Add :SUFeedURL string https://raw.githubusercontent.com/vitodelcambio/xl/main/appcast.xml" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBKEY" "$APP/Contents/Info.plist" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $SPARKLE_PUBKEY" "$APP/Contents/Info.plist"
 mv "$APP/Contents/MacOS/Hammerspoon" "$APP/Contents/MacOS/ExcelAltCore"
 # Native launcher (see build/launcher.c): configures the app's own prefs,
 # then execs the engine. Compiled here so the bundle's main executable is
 # a proper Mach-O, which Gatekeeper accepts unconditionally.
 clang -O2 -o "$APP/Contents/MacOS/ExcelAlt" build/launcher.c -framework CoreFoundation
+
+echo "→ Branding the About window"
+cp build/Credits.html "$APP/Contents/Resources/Credits.html" 2>/dev/null || true
+rm -f "$APP/Contents/Resources/Credits.rtf" 2>/dev/null || true
 
 echo "→ De-branding engine UI resources"
 # First-run windows (e.g. the Accessibility prompt) come from the engine's
@@ -61,6 +74,9 @@ cp -R "$APP" "$DMGROOT/"
 ln -s /Applications "$DMGROOT/Applications"
 hdiutil create -volname "XL" -srcfolder "$DMGROOT" -ov -format UDZO -quiet dist/XL.dmg
 rm -rf "$DMGROOT"
+
+echo "→ Update archive (Sparkle in-app updates)"
+ditto -c -k --keepParent "$APP" dist/ExcelAlt-update.zip
 
 echo "→ Zip fallback (app + optional installer, for troubleshooting)"
 cp "installer/Install XL.command" dist/

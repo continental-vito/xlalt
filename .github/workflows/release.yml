@@ -18,7 +18,12 @@ jobs:
       # only builds and ships. (A brew/lua install here proved brittle on
       # the macOS runner and failed the v1.4.1 build.)
       - name: Build, sign, and package DMG
-        run: bash build/build-app.sh
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          export XL_VERSION="${TAG#v}"
+          export XL_BUILD="${{ github.run_number }}"
+          bash build/build-app.sh
       - name: Create or update release with DMG
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -27,4 +32,38 @@ jobs:
           gh release create "$TAG" --title "⌥XL $TAG" \
             --notes "Download XL.dmg below → drag ExcelAlt to Applications → open (first time: System Settings → Privacy & Security → Open Anyway) → grant Accessibility → tap ⌥ in Excel." \
             2>/dev/null || true
-          gh release upload "$TAG" dist/XL.dmg dist/XL-App.zip --clobber
+          gh release upload "$TAG" dist/XL.dmg dist/XL-App.zip dist/ExcelAlt-update.zip --clobber
+      - name: Publish appcast for in-app updates
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -e
+          KEYFILE=build/sparkle_ed25519_key.pem
+          if [ -n "$SPARKLE_PRIVATE_KEY" ]; then
+            printf '%s' "$SPARKLE_PRIVATE_KEY" > /tmp/sk.pem; KEYFILE=/tmp/sk.pem
+          fi
+          if [ ! -f "$KEYFILE" ]; then echo "no signing key; skipping appcast"; exit 0; fi
+          VER="${TAG#v}"
+          BUILD="${{ github.run_number }}"
+          SIG=$(openssl pkeyutl -sign -inkey "$KEYFILE" -rawin -in dist/ExcelAlt-update.zip | base64)
+          LEN=$(stat -f%z dist/ExcelAlt-update.zip)
+          cat > appcast.xml <<APPCAST
+          <?xml version="1.0" encoding="utf-8"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+          <channel><title>⌥XL</title>
+          <item>
+          <title>Version $VER</title>
+          <sparkle:version>$BUILD</sparkle:version>
+          <sparkle:shortVersionString>$VER</sparkle:shortVersionString>
+          <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
+          <enclosure url="https://github.com/vitodelcambio/xl/releases/download/$TAG/ExcelAlt-update.zip" length="$LEN" type="application/octet-stream" sparkle:edSignature="$SIG"/>
+          </item>
+          </channel></rss>
+          APPCAST
+          sed -i '' 's/^          //' appcast.xml
+          git config user.name "xl-ci" ; git config user.email "ci@corgianalyst.dev"
+          git add appcast.xml
+          git commit -m "appcast $TAG [skip ci]" || exit 0
+          git push origin HEAD:main
