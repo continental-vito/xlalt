@@ -42,8 +42,11 @@ mv "$APP/Contents/MacOS/Hammerspoon" "$APP/Contents/MacOS/ExcelAltCore"
 clang -O2 -o "$APP/Contents/MacOS/ExcelAlt" build/launcher.c -framework CoreFoundation
 
 echo "→ Branding the About window"
-cp build/Credits.html "$APP/Contents/Resources/Credits.html" 2>/dev/null || true
+cp build/Credits.html "$APP/Contents/Resources/Credits.html"
 rm -f "$APP/Contents/Resources/Credits.rtf" 2>/dev/null || true
+# Some AppKit builds read Credits files as MacRoman unless the charset is
+# declared in-file (done above) — verify it is valid UTF-8 before shipping.
+iconv -f UTF-8 -t UTF-8 "$APP/Contents/Resources/Credits.html" >/dev/null
 
 echo "→ De-branding engine UI resources"
 # First-run windows (e.g. the Accessibility prompt) come from the engine's
