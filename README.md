@@ -1,78 +1,96 @@
-# ⌥XL — Windows Alt shortcuts for Excel on Mac
+<div align="center">
 
-Tap the Option key in Excel for Mac, then type the Windows sequence you already know: `H O I` autofits, `H V V` pastes values, `H B A` draws all borders, `H 0` / `H 9` adjust decimals, `=` AutoSums, `W F F` freezes panes. A KeyTips panel shows what's available as you type. Around 40 sequences ship built in, and a Shortcut Manager lets you add your own (keystrokes, Excel menu paths, or AppleScript).
+<img src="docs/icon.png" width="128" alt="XL">
 
-The app is a menu bar utility: no dock icon, corgi app icon, an ⌥-chart glyph in the menu bar. It is built on the Hammerspoon runtime, fully rebranded and self-contained.
+# ⌥XL
 
-## Download (no build needed)
+**Windows Alt shortcuts for Excel on Mac.**
 
-**[⬇ Download XL.dmg](https://github.com/vitodelcambio/xl/releases/latest/download/XL.dmg)** — the classic Mac install:
+Tap the **⌥ Option** key in Excel, then type the sequence you already know from Windows.
+`H O I` autofits · `H V V` pastes values · `H B A` draws all borders · `W V G` toggles gridlines
 
-1. Double-click the DMG → a window opens with the app and an Applications folder. Drag `ExcelAlt` onto `Applications`. Eject.
-2. Double-click ExcelAlt in Applications. **First open only:** macOS blocks non-notarized downloads — System Settings → Privacy & Security → "ExcelAlt was blocked" → **Open Anyway**. One time, then it opens normally forever. (Removing even that one dialog requires Apple's $99/yr Developer ID + notarization; that's Apple's gate, wired into `build-app.sh` the day there's a certificate.)
-3. Grant **Accessibility** when asked — shortcuts go live automatically seconds later. Open Excel, tap ⌥.
+### [⬇ Download for macOS](https://github.com/vitodelcambio/xlalt/releases/latest/download/XL.dmg)
 
-The app is fully self-configuring: its launcher writes its own settings on every start, so no installer, no Terminal, works from any folder. DMGs are built, signed, and attached to each release automatically by CI on a real macOS runner (`.github/workflows/release.yml`) — push a `v*` tag and the release appears with the DMG. Custom shortcuts of kind "menu path" address the Mac **menu bar** (Edit, Format, Window…) in Excel's display language — not the Windows ribbon; prefer the AppleScript kind for language-independent actions.
+<sub>Apple Silicon &amp; Intel · macOS 12+ · free &amp; open source</sub>
 
-## Safety model (read before touching the tap code)
+</div>
 
-The engine listens to keyboard events through macOS event taps. macOS **holds keyboard delivery for the entire system** while a tap callback runs, which imposes three hard rules, all enforced by tests:
+---
 
-1. **Taps run only while Excel is frontmost.** An `hs.application.watcher` starts them when Excel activates and stops them the moment anything else takes focus. Outside Excel the app touches no events at all.
-2. **No blocking calls inside tap callbacks.** No `frontmostApplication()`, no AppleScript, no file I/O. The frontmost state is cached by the watcher. Actions triggered by a completed sequence run via `hs.timer.doAfter`, outside the callback. A source-level test fails CI if a `frontmostApplication` call reappears in a handler.
-3. **Callbacks never throw.** Both handlers are wrapped so any internal error returns `false` (pass the event through) instead of stalling the event chain.
+## Why
 
-Version 10 violated rule 2 and froze typing machine-wide; the v11 architecture and test `[1]`/`[2]` groups exist so that can't regress.
+Excel's ribbon shortcuts are muscle memory for anyone who learned the app on Windows — and they simply don't exist on the Mac. ⌥XL brings them back: one tap of Option enters sequence mode, a KeyTips panel shows what's available as you type, and ~50 built-in sequences map to real Excel actions. Add your own with keystrokes, menu paths, or AppleScript.
 
-## Layout
+## Install
 
+1. **[Download XL.dmg](https://github.com/vitodelcambio/xlalt/releases/latest/download/XL.dmg)**, open it, drag **ExcelAlt** into Applications.
+2. Open it. First launch only: macOS blocks apps that aren't notarized — go to **System Settings → Privacy &amp; Security** and click **Open Anyway**.
+3. Grant **Accessibility** when the app asks. Shortcuts activate immediately.
+4. Open Excel, tap **⌥**, start typing sequences.
+
+Updates after that arrive in-app: **ExcelAlt → Check for Updates**.
+
+## Screenshots
+
+<div align="center">
+
+<img src="docs/screenshot-manager.png" width="780" alt="XL Shortcut Manager">
+
+<sub>The Shortcut Manager — search, edit, and add shortcuts, with every command visible at a glance.</sub>
+
+</div>
+
+## Demo
+
+<!-- TO ADD THE VIDEO:
+     1. Open a new Issue in this repo (don't submit it)
+     2. Drag your .mp4 into the comment box and wait for upload
+     3. Copy the generated https://github.com/user-attachments/assets/... URL
+     4. Replace the italic line below with that URL on its own line -->
+
+_Video coming soon._
+
+## Shortcuts
+
+A selection of what ships built in — all editable and searchable in the app:
+
+| Sequence | Action | Sequence | Action |
+|---|---|---|---|
+| `H V V` | Paste values | `H B A` | All borders |
+| `H V F` | Paste formulas | `H B N` | No borders |
+| `H O I` | AutoFit column width | `H E A` | Clear all |
+| `H O A` | AutoFit row height | `H E C` | Clear contents |
+| `H M C` | Merge &amp; center | `H 0` / `H 9` | More / fewer decimals |
+| `H W` | Wrap text | `H P` | Percent style |
+| `A S A` | Sort ascending | `W F F` | Freeze panes |
+| `A T T` | Toggle AutoFilter | `W V G` | Toggle gridlines |
+
+## Custom shortcuts
+
+Three ways to bind a sequence, all from the Shortcut Manager:
+
+- **Keystroke** — replay a combo Excel already knows: `cmd+shift+t`
+- **Menu path** — click Excel's macOS menu bar: `Edit > Clear > All`
+- **AppleScript** — full automation: `set zoom of active window to 150`
+
+The in-app guide explains each one with examples.
+
+## Development
+
+```bash
+lua5.4 tests/run_tests.lua     # 48 tests, no macOS required
+bash build/build-app.sh        # build + sign + DMG (macOS only)
 ```
-src/init.lua          The whole engine (state, sequences, overlay, manager, menubar)
-tests/hs_mock.lua     Headless mock of the Hammerspoon `hs` API with recorders
-tests/run_tests.lua   38-test suite: freeze regression, sequences, formats, store
-assets/               Icon sources (SVG) + generated icns / PNGs + generator script
-installer/            End-user installer script and README
-build/build-app.sh    Reproducible macOS build → dist/XL-App.zip
-.github/workflows/    CI: syntax check + full test suite on every push
-```
 
-## Running the tests
+`src/init.lua` is the engine; `tests/hs_mock.lua` mocks the macOS API so everything runs headless in CI. Pushing a `v*` tag builds the app on a macOS runner, signs an update archive, and publishes the release plus the Sparkle appcast.
 
-Needs only Lua 5.4 — no macOS required:
+**Before touching the event-tap code, read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** — tap callbacks hold the system keyboard, so they must never block or touch the window server.
 
-```
-lua5.4 tests/run_tests.lua
-```
+## Known limitations
 
-The mock (`tests/hs_mock.lua`) implements event taps, timers, the app watcher, JSON, canvas, and menubar with recorders, so tests can drive the engine with synthetic key events and assert on the AppleScript it emits, which events it swallows, and when its taps are enabled.
+- **Not notarized** — expect one "Open Anyway" on first launch, and Accessibility must be re-granted after updates. Both disappear with an Apple Developer ID certificate.
+- **Menu bar icon** doesn't render on some systems: macOS reports the item as created but never lays it out. The app is fully usable from its window and Dock icon.
 
-## Building the app (macOS)
+## License
 
-```
-bash build/build-app.sh
-```
-
-Downloads the runtime, rebrands it (`com.corgianalyst.excel-alt-shortcuts`, display name ⌥XL, corgi icon, no dock icon, update feed removed), embeds `src/init.lua` and the assets, ad-hoc signs, and zips `dist/XL-App.zip` with the installer.
-
-To regenerate icons after editing the SVGs: `pip install cairosvg && python3 assets/make_icons.py` (outputs land in `assets/out/`; copy `AppIcon.icns`, `menubar@2x.png` into `assets/`).
-
-## Quick start (pull and run)
-
-```
-git pull
-./start.sh          # or double-click "Start XL.command" in Finder
-```
-
-The first run builds the app from source (downloads the runtime, rebrands it, embeds `src/init.lua` and the assets), installs it to /Applications, resets any stale Accessibility grant, ad-hoc signs, and launches it. Later runs skip straight to installing and launching the current build; pass `./start.sh --rebuild` to force a fresh build after you change `src/`.
-
-Grant Accessibility to "ExcelAlt" when macOS asks — shortcuts go live automatically a couple of seconds later. Then open Excel and tap ⌥.
-
-Requirements: macOS, plus command-line tools for the one-time build (`git`, `curl`, `unzip`, `codesign`, all standard on a Mac with Xcode command-line tools). The built `dist/` bundle is gitignored, which is why the first pull builds it locally rather than shipping a binary in the repo.
-
-## End-user install (prebuilt zip)
-
-Alternatively, distribute `dist/XL-App.zip` (produced by `build/build-app.sh`). Recipients unzip and right-click `Install XL.command` → Open — same install/permission flow, no build step or command-line tools needed on their machine.
-
-## Roadmap
-
-Phase 2 is a native Swift rewrite (CGEventTap + NSPanel + WKWebView) sharing the same shortcuts JSON schema, for signed/notarized distribution. Note: Mac App Store sandboxing is incompatible with global keystroke interception, so distribution stays direct, like every app in this category.
+MIT. Built on the [Hammerspoon](https://www.hammerspoon.org) runtime (MIT).

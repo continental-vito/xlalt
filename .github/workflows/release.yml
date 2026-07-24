@@ -60,7 +60,7 @@ jobs:
           <sparkle:version>$BUILD</sparkle:version>
           <sparkle:shortVersionString>$VER</sparkle:shortVersionString>
           <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
-          <enclosure url="https://github.com/vitodelcambio/xl/releases/download/$TAG/ExcelAlt-update.zip" length="$LEN" type="application/octet-stream" sparkle:edSignature="$SIG"/>
+          <enclosure url="https://github.com/vitodelcambio/xlalt/releases/download/$TAG/ExcelAlt-update.zip" length="$LEN" type="application/octet-stream" sparkle:edSignature="$SIG"/>
           </item>
           </channel></rss>
           APPCAST
