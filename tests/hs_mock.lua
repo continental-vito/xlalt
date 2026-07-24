@@ -277,6 +277,7 @@ hs.image = { imageFromPath = function(_) return nil end }
 hs.base64 = { encode = function(s) return "b64" end }
 hs.processInfo = { resourcePath = "/tmp/xl-test-resources",
                    bundleID = "com.corgianalyst.excel-alt-shortcuts" }
+hs.plist = { read = function(_) return { CFBundleShortVersionString = "9.9" } end }
 hs.http = { asyncGet = function(_, _, cb) if cb then cb(404, "") end end }
 hs.host = { operatingSystemVersion = function() return { major = 15, minor = 0, patch = 0 } end }
 hs.execute = function(cmd) M.log.executed = M.log.executed or {} ;

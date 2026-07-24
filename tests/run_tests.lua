@@ -277,6 +277,8 @@ ExcelAlt.overlayOn = true
 -- =====================================================================
 print("\n[6c] Feedback")
 -- =====================================================================
+check("version comes from the app bundle, not a hardcoded string",
+  ExcelAlt.version == "9.9", ExcelAlt.version)
 do
   local ExcelAltUCC = nil
   -- drive the same code path the webview uses

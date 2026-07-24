@@ -21,7 +21,7 @@
 
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
-  version    = "2.9",
+  version    = "dev",   -- replaced at startup by the bundle's real version
   enabled    = true,
   overlayOn  = true,   -- KeyTips panel; expert users can switch it off
   mode       = false,
@@ -50,6 +50,18 @@ local SEQ_TIMEOUT = 4
 -- ---------------------------------------------------------------------
 -- Paths & persistence (own Application Support dir, never Hammerspoon's)
 -- ---------------------------------------------------------------------
+-- Single source of truth for the version: the app bundle's Info.plist,
+-- which the build stamps from the release tag. Hardcoding it in source
+-- made the About window and feedback emails disagree after every release.
+do
+  local ok, v = pcall(function()
+    local plistPath = (hs.processInfo.bundlePath or "") .. "/Contents/Info.plist"
+    local d = hs.plist and hs.plist.read and hs.plist.read(plistPath)
+    return d and d.CFBundleShortVersionString
+  end)
+  if ok and type(v) == "string" and #v > 0 then ExcelAlt.version = v end
+end
+
 local FEEDBACK_TO   = "vito.continental@gmail.com"
 local STATS_URL     = "https://raw.githubusercontent.com/continental-vito/xlalt/main/docs/feedback-stats.json"
 
