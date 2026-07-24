@@ -21,7 +21,7 @@
 
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
-  version    = "2.2",
+  version    = "2.3",
   enabled    = true,
   overlayOn  = true,   -- KeyTips panel; expert users can switch it off
   mode       = false,
@@ -602,11 +602,14 @@ button.del:hover { background:#f9e9e6; }
 .addbar .cancel { background:transparent; color:#6b7570; display:none; }
 #err { display:none; color:#b04a3a; font-size:12px; margin:2px 0 6px; font-weight:600; }
 .hint { font-size:11.5px; color:#8a877d; margin-bottom:8px; }
-.toggle { display:flex; align-items:center; gap:12px; background:#fff; border:1px solid #e6e3da;
-  border-radius:10px; padding:11px 14px; margin-top:14px; }
+.toggle { display:flex; align-items:center; justify-content:space-between; gap:14px; background:#fff;
+  border:1px solid #e6e3da; border-radius:10px; padding:11px 14px; margin-top:14px; }
 .toggle .sw { display:flex; align-items:center; gap:9px; font-size:13px; font-weight:600; cursor:pointer; }
-.toggle input { width:17px; height:17px; accent-color:var(--green); cursor:pointer; }
-.toggle .note { font-size:11.5px; color:#8a877d; }
+.toggle .sw input { width:17px; height:17px; accent-color:var(--green); cursor:pointer; }
+.toggle .note { font-size:11.5px; color:#8a877d; margin:3px 0 0 26px; }
+#search { flex:1; max-width:360px; padding:9px 12px; border:1px solid #d8d4c8; border-radius:8px;
+  font-size:13px; background:#fbfaf6; }
+#search:focus { outline:2px solid var(--green2); background:#fff; }
 #ax { display:none; background:#B04A3A; color:#fff; padding:10px 24px; font-size:13px;
   align-items:center; gap:12px; }
 #ax button { background:#fff; color:#B04A3A; font-weight:700; }
@@ -622,11 +625,14 @@ button.del:hover { background:#f9e9e6; }
 </div>
 <main>
   <div class="toggle">
-    <label class="sw">
-      <input type="checkbox" id="ovl" onchange="send({op:'overlay', on: this.checked})">
-      <span>Show KeyTips overlay in Excel</span>
-    </label>
-    <span class="note">Off = no popup panel; sequences still work (for experts who know them by heart).</span>
+    <div class="sw-wrap">
+      <label class="sw">
+        <input type="checkbox" id="ovl" onchange="send({op:'overlay', on: this.checked})">
+        <span>Show KeyTips overlay in Excel</span>
+      </label>
+      <div class="note">For experts who know shortcuts by heart.</div>
+    </div>
+    <input id="search" type="search" placeholder="Search shortcuts…" oninput="applyFilter()">
   </div>
   <div class="addbar">
     <input id="f-seq" placeholder="hxx" maxlength="6">
@@ -647,14 +653,26 @@ button.del:hover { background:#f9e9e6; }
 </main>
 <script>
 let editing = null;   // {orig, builtin, luaKind} while editing
-let items = [];
+let all = [];         // full catalog from the engine
+let items = [];       // currently displayed (filtered) rows
 
 function esc(t) { const d = document.createElement('div'); d.textContent = t == null ? '' : t; return d.innerHTML; }
 
 function render(list) {
-  items = list;
+  all = list;
+  applyFilter();
+}
+
+function applyFilter() {
+  const q = (document.getElementById('search').value || '').trim().toLowerCase();
+  items = !q ? all : all.filter(it =>
+    (it.seq + ' ' + it.desc + ' ' + (it.cmd || '')).toLowerCase().includes(q));
+  renderRows();
+}
+
+function renderRows() {
   const tb = document.getElementById('rows'); tb.innerHTML = '';
-  list.forEach((it, i) => {
+  items.forEach((it, i) => {
     const tr = document.createElement('tr');
     tr.innerHTML =
       '<td class="seq">' + esc(it.seq.toUpperCase().split('').join(' ')) + '</td>' +
@@ -899,9 +917,18 @@ local function menubarMenu()
 end
 
 local function setupMenubar()
-  if ExcelAlt.bar then pcall(function() ExcelAlt.bar:delete() end) end
+  -- If an item already exists AND macOS reports it on the bar, keep it.
+  if ExcelAlt.bar then
+    local ok, inBar = pcall(function() return ExcelAlt.bar:isInMenuBar() end)
+    if ok and inBar == true then
+      ExcelAlt.bar:setMenu(menubarMenu)
+      return
+    end
+    pcall(function() ExcelAlt.bar:delete() end)
+    ExcelAlt.bar = nil
+  end
   ExcelAlt.bar = hs.menubar.new()
-  if not ExcelAlt.bar then return end
+  if not ExcelAlt.bar then dlog("menubar: hs.menubar.new() returned nil") ; return end
   local p = hs.processInfo.resourcePath .. "/xl-menubar@2x.png"
   if fileExists(p) then
     local img = hs.image.imageFromPath(p)
@@ -919,6 +946,17 @@ local function setupMenubar()
   ExcelAlt.bar:setTooltip(APPNAME .. " — Alt shortcuts for Excel")
   ExcelAlt.bar:setMenu(menubarMenu)
   dlog("menubar: item created; icon=" .. tostring(ExcelAlt.barIcon ~= nil))
+  -- Half a second later, record what macOS actually DID with the item:
+  -- on the bar or not, and at which screen coordinates.
+  hs.timer.doAfter(0.5, function()
+    local okI, inBar = pcall(function() return ExcelAlt.bar and ExcelAlt.bar:isInMenuBar() end)
+    local okF, fr   = pcall(function() return ExcelAlt.bar and ExcelAlt.bar:frame() end)
+    local scr = hs.screen.mainScreen():frame()
+    dlog(string.format("menubar: visible=%s frame=%s screen=%dx%d",
+      tostring(okI and inBar),
+      (okF and fr) and string.format("(%.0f,%.0f %.0fx%.0f)", fr.x, fr.y, fr.w, fr.h) or "n/a",
+      scr.w, scr.h))
+  end)
 end
 
 -- ---------------------------------------------------------------------
@@ -997,6 +1035,20 @@ pcall(openManager)
 -- items created before it completes: rebuild ours once things settle.
 hs.timer.doAfter(2, setupMenubar)
 hs.timer.doAfter(6, setupMenubar)
+-- Last resort at +12s: if macOS still refuses to show the item, rebuild it
+-- as text-only ("⌥XL"), the most primitive form a status item can take.
+hs.timer.doAfter(12, function()
+  local ok, inBar = pcall(function() return ExcelAlt.bar and ExcelAlt.bar:isInMenuBar() end)
+  if not (ok and inBar == true) then
+    dlog("menubar: STILL not visible; last-resort text-only rebuild")
+    pcall(function() ExcelAlt.bar:delete() end)
+    ExcelAlt.bar = hs.menubar.new()
+    if ExcelAlt.bar then
+      ExcelAlt.bar:setTitle("⌥XL")
+      ExcelAlt.bar:setMenu(menubarMenu)
+    end
+  end
+end)
 
 -- Cmd+Q support: a hotkey active ONLY while ExcelAlt is the frontmost app
 -- (enabled/disabled by the app watcher above). Requires Accessibility, so
@@ -1034,7 +1086,19 @@ else
     if hs.accessibilityState() then
       ExcelAlt.permTimer:stop()
       ExcelAlt.permTimer = nil
-      grantReady()
+      -- A running process caches its trust state: taps granted mid-run
+      -- often refuse to attach until relaunch (the "toggle it five times"
+      -- syndrome). Restart ourselves once, automatically — the fresh
+      -- process starts fully trusted and works on the first toggle.
+      dlog("accessibility granted at runtime; self-relaunching for clean trust")
+      hs.alert.show(APPNAME .. ": permission granted — restarting…", 1.2)
+      local bp = hs.processInfo.bundlePath
+      if bp then
+        os.execute("(/bin/sleep 1; /usr/bin/open '" .. bp .. "') >/dev/null 2>&1 &")
+        hs.timer.doAfter(0.6, function() os.exit() end)
+      else
+        grantReady()
+      end
     end
   end)
 end
