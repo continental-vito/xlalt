@@ -275,6 +275,27 @@ check("overlay OFF: action fires but no confirmation alert",
 ExcelAlt.overlayOn = true
 
 -- =====================================================================
+print("\n[6c] Feedback")
+-- =====================================================================
+do
+  local ExcelAltUCC = nil
+  -- drive the same code path the webview uses
+  local sent = ExcelAlt._test.sendFeedback and true or false
+  if ExcelAlt._test.sendFeedback then
+    ExcelAlt._test.sendFeedback(5, "Great app", "me@example.com")
+    local cmds = mock.log.executed or {}
+    local last = cmds[#cmds] or ""
+    check("feedback opens a prefilled mail to the feedback address",
+      last:find("mailto:vito%.continental@gmail%.com") ~= nil and
+      last:find("Rating") ~= nil, last:sub(1, 80))
+    check("comment text is URL-encoded into the message body",
+      last:find("Great%%20app") ~= nil, last:sub(1, 120))
+  else
+    check("sendFeedback exposed for testing", false)
+  end
+end
+
+-- =====================================================================
 print("\n[7] Deferred-UI invariant (guards the v12 fix)")
 -- =====================================================================
 check("zero canvas/alert/screen calls ever executed inside a tap callback",

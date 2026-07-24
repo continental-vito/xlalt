@@ -21,7 +21,7 @@
 
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
-  version    = "2.5",
+  version    = "2.9",
   enabled    = true,
   overlayOn  = true,   -- KeyTips panel; expert users can switch it off
   mode       = false,
@@ -50,6 +50,9 @@ local SEQ_TIMEOUT = 4
 -- ---------------------------------------------------------------------
 -- Paths & persistence (own Application Support dir, never Hammerspoon's)
 -- ---------------------------------------------------------------------
+local FEEDBACK_TO   = "vito.continental@gmail.com"
+local STATS_URL     = "https://raw.githubusercontent.com/continental-vito/xlalt/main/docs/feedback-stats.json"
+
 local SUPPORT = os.getenv("HOME") .. "/Library/Application Support/ExcelAlt"
 hs.fs.mkdir(SUPPORT)
 local STORE = SUPPORT .. "/shortcuts.json"
@@ -78,6 +81,79 @@ end
 local function writeJSON(p, tbl)
   local f = io.open(p, "w"); if not f then return false end
   f:write(hs.json.encode(tbl, true)); f:close()
+  return true
+end
+
+-- ---------------------------------------------------------------------
+-- Feedback
+-- ---------------------------------------------------------------------
+local function urlEncode(str)
+  return (tostring(str):gsub("[^%w%-%._~]", function(c)
+    return string.format("%%%02X", string.byte(c))
+  end))
+end
+
+-- Published stats (curated JSON in the repo) so the app can show a real
+-- average without running a server. Cached locally after first fetch.
+local FSTATS = SUPPORT .. "/feedback-stats.json"
+
+local function localFeedback()
+  return readJSON(SUPPORT .. "/feedback.json") or { sent = 0 }
+end
+
+local function pushStatsToUI()
+  if not ExcelAlt.manager then return end
+  local remote = readJSON(FSTATS) or {}
+  local payload = {
+    average = remote.average, ratings = remote.ratings, comments = remote.comments,
+    sent = localFeedback().sent or 0,
+  }
+  ExcelAlt.manager:evaluateJavaScript("setStats(" .. hs.json.encode(payload) .. ")")
+end
+
+local function refreshStats()
+  pcall(function()
+    hs.http.asyncGet(STATS_URL, nil, function(code, body)
+      if code == 200 and body and #body < 4096 then
+        local ok, data = pcall(hs.json.decode, body)
+        if ok and type(data) == "table" then
+          writeJSON(FSTATS, data)
+          pcall(pushStatsToUI)
+        end
+      end
+    end)
+  end)
+end
+
+local function sendFeedback(rating, comment, contact)
+  local osver = ""
+  pcall(function()
+    local v = hs.host.operatingSystemVersion()
+    osver = string.format("macOS %d.%d.%d", v.major or 0, v.minor or 0, v.patch or 0)
+  end)
+  local stars = string.rep("★", math.max(1, math.min(5, tonumber(rating) or 5)))
+  local subject = string.format("[XL feedback] %s (%s/5)", stars, tostring(rating))
+  local body = table.concat({
+    "Rating: " .. tostring(rating) .. "/5",
+    "",
+    "Comment:",
+    (comment ~= nil and #comment > 0) and comment or "(no comment)",
+    "",
+    "Reply to: " .. ((contact ~= nil and #contact > 0) and contact or "(not provided)"),
+    "",
+    "---",
+    "XL version " .. ExcelAlt.version .. "  " .. osver,
+  }, "\n")
+
+  local url = string.format("mailto:%s?subject=%s&body=%s",
+    FEEDBACK_TO, urlEncode(subject), urlEncode(body))
+  hs.execute("open '" .. url .. "'")
+
+  local f = localFeedback()
+  f.sent = (f.sent or 0) + 1
+  f.lastRating = rating
+  writeJSON(SUPPORT .. "/feedback.json", f)
+  dlog("feedback: composed mail, rating=" .. tostring(rating))
   return true
 end
 
@@ -612,6 +688,35 @@ button.del:hover { background:#f9e9e6; }
 .toggle .sw { display:flex; align-items:center; gap:9px; font-size:13px; font-weight:600; cursor:pointer; }
 .toggle .sw input { width:17px; height:17px; accent-color:var(--green); cursor:pointer; }
 .toggle .note { font-size:11.5px; color:#8a877d; margin:3px 0 0 26px; }
+nav.tabs { display:flex; gap:4px; padding:0 24px; background:linear-gradient(180deg,var(--green),#0c5733); }
+nav.tabs button { background:transparent; color:#cfe3d7; font-size:13px; font-weight:600;
+  padding:9px 16px; border-radius:8px 8px 0 0; }
+nav.tabs button.on { background:var(--paper); color:var(--green); }
+.page { display:none; } .page.on { display:block; }
+.fbwrap { max-width:560px; margin:24px auto 0; background:#fff; border:1px solid #e6e3da;
+  border-radius:12px; padding:22px 24px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+.fbwrap h2 { font-size:17px; margin-bottom:4px; }
+.fbwrap .sub { font-size:12.5px; color:#7d8580; margin-bottom:18px; }
+.stars { display:flex; gap:6px; margin:0 0 16px; }
+.stars span { font-size:30px; line-height:1; cursor:pointer; color:#d9d5c9; transition:color .1s; }
+.stars span.lit { color:var(--gold); }
+.fbwrap textarea { width:100%; min-height:110px; padding:11px 12px; border:1px solid #d8d4c8;
+  border-radius:9px; font-size:13px; font-family:inherit; resize:vertical; }
+.fbwrap input.contact { width:100%; padding:10px 12px; margin-top:10px; border:1px solid #d8d4c8;
+  border-radius:9px; font-size:13px; }
+.fbwrap .send { background:var(--green); color:#fff; font-weight:700; padding:10px 20px;
+  font-size:13px; margin-top:14px; }
+.fbwrap .send:hover { background:var(--green2); }
+.fbwrap .privacy { font-size:11.5px; color:#8a877d; margin-top:12px; line-height:1.5; }
+.fbdone { display:none; background:#e9f2ec; border:1px solid #cfe3d7; color:#20603f;
+  border-radius:9px; padding:11px 13px; font-size:12.5px; margin-top:14px; }
+.statsbar { display:flex; align-items:center; justify-content:center; gap:22px; margin:18px auto 0;
+  max-width:560px; color:#4a4f4b; font-size:13px; }
+.statsbar .big { font-size:26px; font-weight:700; color:var(--green); }
+.statsbar .lbl { font-size:11px; color:#8a877d; text-transform:uppercase; letter-spacing:.7px; }
+.statsbar div { text-align:center; }
+.fblink { text-align:center; margin:22px 0 0; font-size:12.5px; color:#7d8580; }
+.fblink a { color:var(--green); font-weight:600; cursor:pointer; text-decoration:none; }
 #search { flex:1; max-width:360px; padding:9px 12px; border:1px solid #d8d4c8; border-radius:8px;
   font-size:13px; background:#fbfaf6; }
 #search:focus { outline:2px solid var(--green2); background:#fff; }
@@ -628,7 +733,11 @@ button.del:hover { background:#f9e9e6; }
   <span style="flex:1">Shortcuts are OFF — macOS Accessibility permission is missing.</span>
   <button onclick="send({op:'axsettings'})">Open Accessibility Settings</button>
 </div>
-<main>
+<nav class="tabs">
+  <button id="tab-sc" class="on" onclick="showPage('sc')">Shortcuts</button>
+  <button id="tab-fb" onclick="showPage('fb')">Feedback</button>
+</nav>
+<main id="page-sc" class="page on">
   <div class="toggle">
     <div class="sw-wrap">
       <label class="sw">
@@ -667,6 +776,28 @@ button.del:hover { background:#f9e9e6; }
   </details>
   <table><thead><tr><th>Sequence</th><th>Action</th><th>Command</th><th></th><th></th><th></th></tr></thead>
   <tbody id="rows"></tbody></table>
+  <p class="fblink">Using XL every day? <a onclick="showPage('fb')">Tell me what you think →</a></p>
+</main>
+
+<main id="page-fb" class="page">
+  <div class="statsbar" id="statsbar" style="display:none">
+    <div><div class="big" id="st-avg">–</div><div class="lbl">average rating</div></div>
+    <div><div class="big" id="st-n">–</div><div class="lbl">ratings</div></div>
+    <div><div class="big" id="st-c">–</div><div class="lbl">comments</div></div>
+  </div>
+  <div class="fbwrap">
+    <h2>How is XL working for you?</h2>
+    <p class="sub">Bug reports, missing shortcuts, and ideas all welcome.</p>
+    <div class="stars" id="stars">
+      <span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span>
+      <span data-v="4">★</span><span data-v="5">★</span>
+    </div>
+    <textarea id="fb-text" placeholder="What works, what doesn't, what's missing?"></textarea>
+    <input class="contact" id="fb-contact" placeholder="Your email (optional — only if you'd like a reply)">
+    <button class="send" onclick="sendFeedback()">Send feedback</button>
+    <div class="fbdone" id="fb-done">Thanks! Your mail app should be open with the message ready — press send there to deliver it.</div>
+    <p class="privacy">Your comment is emailed privately and is never shown to other users. Only the average rating and the number of ratings appear here.</p>
+  </div>
 </main>
 <script>
 let editing = null;   // {orig, builtin, luaKind} while editing
@@ -757,6 +888,49 @@ function save() {
 function removeIt(i) {
   const it = items[i];
   send({ op: 'delete', seq: it.seq, orig: it.orig, builtin: it.builtin });
+}
+
+let rating = 0;
+
+function showPage(which) {
+  document.getElementById('page-sc').className = 'page' + (which === 'sc' ? ' on' : '');
+  document.getElementById('page-fb').className = 'page' + (which === 'fb' ? ' on' : '');
+  document.getElementById('tab-sc').className = which === 'sc' ? 'on' : '';
+  document.getElementById('tab-fb').className = which === 'fb' ? 'on' : '';
+  if (which === 'fb') send({ op: 'loadstats' });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('#stars span').forEach(function (el) {
+    el.onclick = function () {
+      rating = parseInt(el.getAttribute('data-v'), 10);
+      document.querySelectorAll('#stars span').forEach(function (o) {
+        o.className = parseInt(o.getAttribute('data-v'), 10) <= rating ? 'lit' : '';
+      });
+    };
+  });
+});
+
+function sendFeedback() {
+  const text = document.getElementById('fb-text').value.trim();
+  const contact = document.getElementById('fb-contact').value.trim();
+  if (!rating) { alert('Please pick a star rating first.'); return; }
+  send({ op: 'feedback', rating: rating, comment: text, contact: contact });
+}
+
+function feedbackDone(ok) {
+  if (!ok) return;
+  document.getElementById('fb-done').style.display = 'block';
+  document.getElementById('fb-text').value = '';
+}
+
+function setStats(s) {
+  if (s.average) {
+    document.getElementById('statsbar').style.display = 'flex';
+    document.getElementById('st-avg').textContent = Number(s.average).toFixed(1) + '★';
+    document.getElementById('st-n').textContent = s.ratings != null ? s.ratings : '–';
+    document.getElementById('st-c').textContent = s.comments != null ? s.comments : '–';
+  }
 }
 
 function send(msg) { window.webkit.messageHandlers.xl.postMessage(msg); }
@@ -851,6 +1025,13 @@ local function openManager()
   ExcelAlt.ucc = hs.webview.usercontent.new("xl"):setCallback(function(msg)
     local b = msg.body
     if b.op == "load" then pushCatalog()
+    elseif b.op == "feedback" then
+      local ok = sendFeedback(b.rating, b.comment, b.contact)
+      ExcelAlt.manager:evaluateJavaScript("feedbackDone(" .. tostring(ok) .. ")")
+      pcall(pushStatsToUI)
+    elseif b.op == "loadstats" then
+      pcall(pushStatsToUI)
+      refreshStats()
     elseif b.op == "overlay" then
       ExcelAlt.overlayOn = (b.on == true)
       writeJSON(PREFS, { enabled = ExcelAlt.enabled, overlayOn = ExcelAlt.overlayOn })
@@ -1158,6 +1339,7 @@ ExcelAlt._test = {
   onAppEvent   = onAppEvent,
   updateTaps   = updateTaps,
   rebuild      = rebuild,
+  sendFeedback = sendFeedback,
   opAdd        = opAdd,
   opEdit       = opEdit,
   opDelete     = opDelete,

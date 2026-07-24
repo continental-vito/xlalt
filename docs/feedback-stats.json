@@ -1,0 +1,6 @@
+{
+  "average": null,
+  "ratings": 0,
+  "comments": 0,
+  "note": "Curated feedback stats shown in the app's Feedback tab. Update 'average' (e.g. 4.7), 'ratings', and 'comments' as feedback emails arrive. While 'average' is null the app hides the stats bar."
+}
