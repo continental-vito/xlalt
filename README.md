@@ -83,11 +83,12 @@ The in-app guide explains each one with examples.
 ## Development
 
 ```bash
-lua5.4 tests/run_tests.lua     # 48 tests, no macOS required
-bash build/build-app.sh        # build + sign + DMG (macOS only)
+lua5.4 tests/run_tests.lua     # headless test suite, no macOS required
+bash build/build-local.sh      # test + build + run a dev build on this Mac
+bash build/build-app.sh        # build + sign + DMG, as CI does (macOS only)
 ```
 
-`src/init.lua` is the engine; `tests/hs_mock.lua` mocks the macOS API so everything runs headless in CI. Pushing a `v*` tag builds the app on a macOS runner, signs an update archive, and publishes the release plus the Sparkle appcast.
+`src/init.lua` is the engine; `tests/hs_mock.lua` mocks the macOS API so everything runs headless in CI. Work lands on `dev`; pushing a `v*` tag from `main` builds the app on a macOS runner, signs an update archive, and publishes the release plus the Sparkle appcast. Branching, the local test loop, and rollback are covered in **[`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)**.
 
 **Before touching the event-tap code, read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** — tap callbacks hold the system keyboard, so they must never block or touch the window server.
 

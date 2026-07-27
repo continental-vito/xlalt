@@ -70,6 +70,14 @@ echo "→ Signing (ad-hoc)"
 codesign --force --sign - "$APP/Contents/MacOS/ExcelAltCore"
 codesign --force --deep --sign - "$APP"
 
+# Local development builds only need dist/ExcelAlt.app; DMG + archives add
+# ~a minute per iteration and are never used off-CI. See build/build-local.sh.
+if [ -n "${XL_APP_ONLY:-}" ]; then
+  rm -rf dist/work
+  echo "✓ dist/ExcelAlt.app ready (packaging skipped: XL_APP_ONLY)"
+  exit 0
+fi
+
 echo "→ Building DMG (classic drag-to-Applications)"
 DMGROOT="dist/dmgroot"
 rm -rf "$DMGROOT" && mkdir -p "$DMGROOT"
