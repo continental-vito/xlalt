@@ -14,6 +14,7 @@ HS_URL="https://github.com/Hammerspoon/hammerspoon/releases/download/${HS_VERSIO
 BID="${XL_BUNDLE_ID:-com.corgianalyst.excel-alt-shortcuts}"
 XL_BUNDLE_NAME="${XL_BUNDLE_NAME:-ExcelAlt}"
 XL_DISPLAY_NAME="${XL_DISPLAY_NAME:-⌥XL}"
+XL_DMG_NAME="${XL_DMG_NAME:-XL}"
 XL_VERSION="${XL_VERSION:-2.5}"
 XL_BUILD="${XL_BUILD:-1}"
 SPARKLE_PUBKEY="c2aHOy058alqEV8VJ/7MzioCtONcOmQWU0Df0LiMGac="
@@ -22,8 +23,8 @@ rm -rf dist && mkdir -p dist/work
 echo "→ Downloading engine ${HS_VERSION}"
 curl -sL -o dist/work/hs.zip "$HS_URL"
 unzip -q dist/work/hs.zip -d dist/work
-mv dist/work/Hammerspoon.app dist/ExcelAlt.app
-APP="dist/ExcelAlt.app"
+mv dist/work/Hammerspoon.app "dist/${XL_BUNDLE_NAME}.app"
+APP="dist/${XL_BUNDLE_NAME}.app"
 
 echo "→ Rebranding bundle"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BID" "$APP/Contents/Info.plist"
@@ -87,7 +88,7 @@ codesign --force --deep --sign - "$APP"
 # ~a minute per iteration and are never used off-CI. See build/build-local.sh.
 if [ -n "${XL_APP_ONLY:-}" ]; then
   rm -rf dist/work
-  echo "✓ dist/ExcelAlt.app ready (packaging skipped: XL_APP_ONLY)"
+  echo "✓ $APP ready (packaging skipped: XL_APP_ONLY)"
   exit 0
 fi
 
@@ -96,7 +97,10 @@ DMGROOT="dist/dmgroot"
 rm -rf "$DMGROOT" && mkdir -p "$DMGROOT"
 cp -R "$APP" "$DMGROOT/"
 ln -s /Applications "$DMGROOT/Applications"
-hdiutil create -volname "XL" -srcfolder "$DMGROOT" -ov -format UDZO -quiet dist/XL.dmg
+# The disk image and the bundle inside it are named after the build, so a
+# development DMG drags into /Applications as ExcelAlt-dev.app and cannot
+# replace the released app.
+hdiutil create -volname "$XL_DMG_NAME" -srcfolder "$DMGROOT" -ov -format UDZO -quiet "dist/${XL_DMG_NAME}.dmg"
 rm -rf "$DMGROOT"
 
 echo "→ Update archive (Sparkle in-app updates)"
@@ -104,6 +108,6 @@ ditto -c -k --keepParent "$APP" dist/ExcelAlt-update.zip
 
 echo "→ Zip fallback (app + optional installer, for troubleshooting)"
 cp "installer/Install XL.command" dist/
-(cd dist && zip -qry XL-App.zip ExcelAlt.app "Install XL.command")
+(cd dist && zip -qry "${XL_DMG_NAME}-App.zip" "${XL_BUNDLE_NAME}.app" "Install XL.command")
 rm -rf dist/work
-echo "✓ dist/XL.dmg and dist/XL-App.zip ready"
+echo "✓ dist/${XL_DMG_NAME}.dmg and dist/${XL_DMG_NAME}-App.zip ready"

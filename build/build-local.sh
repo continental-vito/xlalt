@@ -19,7 +19,7 @@ RESET_TCC=""
 for arg in "$@"; do
   case "$arg" in
     --no-launch) LAUNCH="" ;;
-    --package)   PACKAGE=1 ;;
+    --package)   PACKAGE=1 ;;   # also writes dist/XL-dev.dmg
     --reset-tcc) RESET_TCC=1 ;;
     -h|--help)   sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $arg (try --help)" >&2; exit 2 ;;
@@ -39,6 +39,7 @@ export XL_BUNDLE_ID="com.corgianalyst.excel-alt-shortcuts.dev"
 export XL_BUNDLE_NAME="ExcelAlt-dev"
 export XL_DISPLAY_NAME="⌥XL (dev)"
 export XL_NO_UPDATES=1
+export XL_DMG_NAME="XL-dev"
 
 # ---------------------------------------------------------------- safety net
 # Belt and braces: snapshot the RELEASED app's shortcuts.json before every
@@ -110,7 +111,7 @@ fi
 mkdir -p "$HOME/Applications"
 rm -rf "$DEV_APP"
 # ditto, not cp: the bundle signature lives in extended attributes.
-ditto dist/ExcelAlt.app "$DEV_APP"
+ditto "dist/${XL_BUNDLE_NAME}.app" "$DEV_APP"
 echo "→ Installed $DEV_APP"
 
 if [ -n "$LAUNCH" ]; then
