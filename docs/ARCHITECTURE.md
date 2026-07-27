@@ -4,6 +4,8 @@
 
 The engine listens to keyboard events through macOS event taps. macOS **holds keyboard delivery for the entire system** while a tap callback runs, which imposes three hard rules, all enforced by tests:
 
+0. **Which host is frontmost is asked, never inferred.** `syncFrontmost()` queries `frontmostApplication()` and is the single writer of `ExcelAlt.activeApp`. Every app-watcher event calls it, plus a 0.2 s one-shot to let a switch settle. Deriving the state from the event type instead was a bug: a host that activated and then emitted any further event (`launched`, `unhidden`, a duplicate) had its state cleared while still in front, leaving the taps down until something unrelated forced an update. This is a window-server call, so it is allowed **only** here — on app switches, outside every tap callback.
+
 1. **Taps run only while a supported host is frontmost.** An `hs.application.watcher` starts them when Excel, PowerPoint or Word activates and stops them the moment anything else takes focus. Outside those three the app touches no events at all. Which host is frontmost is cached in `ExcelAlt.activeApp`; a host the user has switched off in the manager keeps the taps stopped.
 2. **No blocking calls inside tap callbacks.** No `frontmostApplication()`, no AppleScript, no file I/O. The frontmost state is cached by the watcher; resolving a sequence is a plain table index into that host's lookup table (`EXACT[activeApp]`). Actions triggered by a completed sequence run via `hs.timer.doAfter`, outside the callback. A source-level test fails CI if a `frontmostApplication` call reappears in a handler.
 3. **Callbacks never throw.** Both handlers are wrapped so any internal error returns `false` (pass the event through) instead of stalling the event chain.

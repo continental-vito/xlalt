@@ -240,6 +240,7 @@ hs.application = {
   watcher = {
     activated = "activated", deactivated = "deactivated",
     terminated = "terminated", launched = "launched", hidden = "hidden",
+    unhidden = "unhidden",
     new = function(fn)
       M.watcherFn = fn
       return { start = function() end, stop = function() end }
@@ -321,6 +322,13 @@ end
 function M.activate(bundle)
   M.frontBundle = bundle
   M.watcherFn("App", "activated", makeApp(bundle))
+end
+
+-- Deliver an arbitrary watcher event WITHOUT changing which app is front:
+-- used to prove a stray event cannot knock out a host that is still in
+-- front of the user.
+function M.appEvent(bundle, event)
+  M.watcherFn("App", event, makeApp(bundle))
 end
 
 -- Bundle ids of the three supported hosts, for readability in tests

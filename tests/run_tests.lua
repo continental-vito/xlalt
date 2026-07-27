@@ -397,6 +397,54 @@ mock.activate(mock.PPT)
 check("other hosts keep working when one is switched off", keyTap:isEnabled())
 ExcelAlt.appEnabled.word = true
 
+-- Regression: the active host used to be inferred from the event type, so
+-- any non-activated event for the host in front cleared it and left the
+-- taps down until something else forced an update.
+mock.activate(mock.PPT)
+check("PowerPoint is active and the taps are up",
+  ExcelAlt.activeApp == "powerpoint" and keyTap:isEnabled())
+mock.appEvent(mock.PPT, "launched")
+check("a launched event for the frontmost host does not knock it out",
+  ExcelAlt.activeApp == "powerpoint" and keyTap:isEnabled(), ExcelAlt.activeApp)
+mock.appEvent(mock.PPT, "unhidden")
+check("an unhidden event for the frontmost host does not knock it out",
+  ExcelAlt.activeApp == "powerpoint" and keyTap:isEnabled(), ExcelAlt.activeApp)
+mock.appEvent(mock.WORD, "terminated")
+check("another host quitting elsewhere does not disturb the front one",
+  ExcelAlt.activeApp == "powerpoint" and keyTap:isEnabled(), ExcelAlt.activeApp)
+mock.flushTimers()
+check("the follow-up settle pass agrees with the front app",
+  ExcelAlt.activeApp == "powerpoint" and keyTap:isEnabled(), ExcelAlt.activeApp)
+
+-- Switching straight between two hosts must not leave the taps down
+mock.activate(mock.WORD)
+check("host-to-host switch keeps the taps up and retargets",
+  ExcelAlt.activeApp == "word" and keyTap:isEnabled())
+
+-- The manager window is not a host: focusing it stops the taps, and
+-- returning to a host brings them back without touching any switch.
+mock.activate("com.corgianalyst.excel-alt-shortcuts")
+check("focusing the manager stops the taps",
+  ExcelAlt.activeApp == nil and not keyTap:isEnabled())
+T.web({ op = "appenabled", app = "powerpoint", on = false })
+mock.activate(mock.WORD)
+check("switching one host off leaves the others working, no toggling needed",
+  ExcelAlt.activeApp == "word" and keyTap:isEnabled() and
+  ExcelAlt.appEnabled.word ~= false)
+mock.activate(mock.PPT)
+check("the host that was switched off stays off",
+  ExcelAlt.activeApp == "powerpoint" and not keyTap:isEnabled())
+T.web({ op = "appenabled", app = "powerpoint", on = true })
+check("switching it back on restores it immediately, in place",
+  keyTap:isEnabled())
+
+-- The overlay switch is per host end to end, through the manager bridge
+T.web({ op = "overlay", app = "powerpoint", on = false })
+check("switching the overlay off for one host leaves the others untouched",
+  ExcelAlt.overlayOn.powerpoint == false and
+  ExcelAlt.overlayOn.excel ~= false and ExcelAlt.overlayOn.word ~= false)
+T.web({ op = "overlay", app = "powerpoint", on = true })
+
 check("PowerPoint bundle id is matched case-insensitively",
   T.byBundle["com.microsoft.powerpoint"] == "powerpoint" and
   T.byBundle["com.microsoft.word"] == "word")

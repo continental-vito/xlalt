@@ -874,30 +874,51 @@ local function updateTaps()
   end
 end
 
+-- Which host is in front is ASKED, never inferred from the event type.
+-- Deriving it from the event was fragile: a host that activated and then
+-- emitted any other event (launched, unhidden, a duplicate activation)
+-- had its state cleared while it was still frontmost, and the taps stayed
+-- down until something else forced an update. Asking is one window-server
+-- call per app switch — infrequent, and outside every tap callback, which
+-- is the rule that matters (see the v10 freeze).
+local function syncFrontmost(why)
+  local f = hs.application.frontmostApplication()
+  local bid = f ~= nil and f:bundleID() or nil
+  local hostId = bid and BY_BUNDLE[bid:lower()] or nil
+  local changed = (hostId ~= ExcelAlt.activeApp)
+  ExcelAlt.activeApp = hostId
+  ExcelAlt.excelFront = (hostId == "excel")   -- legacy mirror
+  if changed then
+    dlog(string.format("front: %s -> host=%s (%s)",
+      tostring(bid), tostring(hostId), tostring(why)))
+  end
+  updateTaps()
+  return changed
+end
+
 local function onAppEvent(_, event, app)
   local w = hs.application.watcher
-  if event ~= w.activated and event ~= w.deactivated and event ~= w.terminated then
-    return
-  end
   local bid = app ~= nil and app:bundleID() or nil
+
   -- Cmd+Q quits ExcelAlt, but only while ExcelAlt itself is frontmost
   if bid == SELF_BUNDLE and ExcelAlt.quitKey then
     if event == w.activated then
       pcall(function() ExcelAlt.quitKey:enable() end)
-    else
+    elseif event == w.deactivated or event == w.terminated then
       pcall(function() ExcelAlt.quitKey:disable() end)
     end
   end
-  local hostId = bid and BY_BUNDLE[bid:lower()] or nil
-  if event == w.activated then
-    ExcelAlt.activeApp = hostId
-  elseif hostId then           -- a supported host deactivated or quit
-    ExcelAlt.activeApp = nil
-  else
-    return                     -- some other app went away: nothing changes
+
+  -- Any event that can change which app is in front, including the ones
+  -- the old handler ignored.
+  if event ~= w.activated and event ~= w.deactivated and event ~= w.terminated
+     and event ~= w.launched and event ~= w.unhidden and event ~= w.hidden then
+    return
   end
-  ExcelAlt.excelFront = (ExcelAlt.activeApp == "excel")   -- legacy mirror
-  updateTaps()
+  syncFrontmost(bid)
+  -- macOS sometimes reports the outgoing app as frontmost during a switch;
+  -- one short follow-up settles it. One-shot, never a repeating timer.
+  hs.timer.doAfter(0.2, function() pcall(syncFrontmost, "settle") end)
 end
 
 -- ---------------------------------------------------------------------
@@ -1521,17 +1542,12 @@ local function opEdit(b)
   saveStore()
 end
 
-local function openManager()
-  if ExcelAlt.manager then
-    ExcelAlt.manager:show()
-    pcall(function()
-      hs.application.applicationForPID(hs.processInfo.processID):activate(true)
-    end)
-    pushCatalog()
-    return
-  end
-  ExcelAlt.ucc = hs.webview.usercontent.new("xl"):setCallback(function(msg)
-    local b = msg.body
+-- Every message the manager window can send. Extracted from the webview
+-- callback so the test suite can drive it directly: this is where the
+-- per-host switches live, and an untested switch is how a bug like
+-- "turning Excel off silences Word" reaches the user.
+local function handleWebMessage(b)
+  if type(b) ~= "table" then return end
     if b.op == "load" then pushCatalog()
     elseif b.op == "feedback" then
       local ok = sendFeedback(b.rating, b.comment, b.contact)
@@ -1567,6 +1583,19 @@ local function openManager()
       end
     elseif b.op == "edit" then opEdit(b)
     elseif b.op == "add" then opAdd(b) end
+end
+
+local function openManager()
+  if ExcelAlt.manager then
+    ExcelAlt.manager:show()
+    pcall(function()
+      hs.application.applicationForPID(hs.processInfo.processID):activate(true)
+    end)
+    pushCatalog()
+    return
+  end
+  ExcelAlt.ucc = hs.webview.usercontent.new("xl"):setCallback(function(msg)
+    handleWebMessage(msg.body)
   end)
 
   local scr = hs.screen.mainScreen():frame()
@@ -1735,12 +1764,7 @@ ExcelAlt.flagsTap = hs.eventtap.new({ hs.eventtap.event.types.flagsChanged }, sa
 ExcelAlt.keyTap   = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, safely(handleKey))
 
 -- One-time frontmost check at startup (allowed here: not inside a tap)
-do
-  local f = hs.application.frontmostApplication()
-  local bid = f ~= nil and f:bundleID() or nil
-  ExcelAlt.activeApp = bid and BY_BUNDLE[bid:lower()] or nil
-  ExcelAlt.excelFront = (ExcelAlt.activeApp == "excel")
-end
+syncFrontmost("startup")
 
 ExcelAlt.watcher = hs.application.watcher.new(onAppEvent)
 ExcelAlt.watcher:start()
@@ -1832,7 +1856,10 @@ local function grantReady()
   pcall(function() ExcelAlt.keyTap:stop() end)
   ExcelAlt.flagsTap = hs.eventtap.new({ hs.eventtap.event.types.flagsChanged }, safely(handleFlags))
   ExcelAlt.keyTap   = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, safely(handleKey))
-  updateTaps()
+  -- Re-ask rather than trusting whatever the watcher last recorded: the
+  -- grant may have arrived long after launch, with the user having moved
+  -- between apps in the meantime.
+  syncFrontmost("grant")
   -- With permission granted, window enumeration works: sweep away any
   -- engine console/preferences window that appeared during first run.
   hideEngineWindows()
@@ -1893,6 +1920,8 @@ ExcelAlt._test = {
   opEdit       = opEdit,
   opDelete     = opDelete,
   savePrefs    = savePrefs,
+  web          = handleWebMessage,
+  syncFront    = syncFrontmost,
   support      = SUPPORT,
   isDev        = IS_DEV,
   apps         = APPS,
