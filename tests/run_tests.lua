@@ -418,6 +418,16 @@ print("\n[7] Deferred-UI invariant (guards the v12 fix)")
 check("zero canvas/alert/screen calls ever executed inside a tap callback",
   mock.uiViolations == 0, mock.uiViolations)
 
+check("firing a shortcut is recorded in debug.log", (function()
+  local f = io.open(tmp .. "/Library/Application Support/ExcelAlt/debug.log", "r")
+  if not f then return false end
+  local log = f:read("*a") ; f:close()
+  return log:find("fired %[word%]") ~= nil or log:find("fired %[powerpoint%]") ~= nil
+end)())
+
+check("release builds store their data in ExcelAlt/, not a dev directory",
+  T.isDev == false and T.support:find("ExcelAlt%-dev") == nil, T.support)
+
 -- =====================================================================
 print("\n[9] Migration from the v1 (Excel-only) shortcuts.json")
 -- =====================================================================
@@ -454,6 +464,34 @@ do
   check("saved file carries both the v2 slices and the v1 top level",
     back.apps ~= nil and back.apps.excel ~= nil and back.custom ~= nil and
     #back.custom == #back.apps.excel.custom, raw:sub(1, 60))
+end
+
+-- =====================================================================
+print("\n[10] Development builds are a separate app")
+-- =====================================================================
+-- A build whose bundle id ends in .dev must keep every byte of its state
+-- apart from the released app installed alongside it.
+do
+  local tmp3 = os.tmpname() ; os.remove(tmp3)
+  os.execute("mkdir -p '" .. tmp3 .. "'")
+  os.getenv = function(k) if k == "HOME" then return tmp3 end return origGetenv(k) end
+  mock.hs.processInfo.bundleID = "com.corgianalyst.excel-alt-shortcuts.dev"
+
+  dofile("src/init.lua")
+  local T3 = ExcelAlt._test
+  check("a .dev bundle id is detected", T3.isDev == true)
+  check("dev builds keep their data in ExcelAlt-dev/",
+    T3.support:find("Application Support/ExcelAlt%-dev$") ~= nil, T3.support)
+
+  T3.opAdd({ app = "excel", seq = "hpp", desc = "Dev only", kind = "keystroke", param = "cmd+p" })
+  local devFile = io.open(tmp3 .. "/Library/Application Support/ExcelAlt-dev/shortcuts.json", "r")
+  check("dev writes land in the dev directory", devFile ~= nil)
+  if devFile then devFile:close() end
+  local releaseFile = io.open(tmp3 .. "/Library/Application Support/ExcelAlt/shortcuts.json", "r")
+  check("dev writes never touch the released app's directory", releaseFile == nil)
+  if releaseFile then releaseFile:close() end
+
+  mock.hs.processInfo.bundleID = "com.corgianalyst.excel-alt-shortcuts"
 end
 
 -- =====================================================================

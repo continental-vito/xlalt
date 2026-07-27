@@ -24,7 +24,9 @@ Bundle ids are matched through `BY_BUNDLE`, which is lowercased: PowerPoint has 
 
 Adding a fourth host means adding a row to `APPS`, a `BUILTINS.<id>` table, and nothing else — the manager tabs, the store slices, the menu bar toggles, and the overlay all derive from `APPS`.
 
-**Built-ins for PowerPoint and Word must not use menu paths.** Menu paths click the macOS menu bar and therefore have to match the host's *display language*; on a French system every English path silently misses. Excel keeps a few historical menu-path entries that the user verified by hand; everything added since is a keystroke or AppleScript. A test enforces this for the two newer hosts.
+**Built-ins for PowerPoint and Word must not use menu paths.** Menu paths click the macOS menu bar and therefore have to match the host's *display language*. The app is distributed publicly, so an English path that works on the developer's machine silently misses for every French, German or Spanish user who downloads it — and it fails invisibly, with no error to report. Excel keeps a few historical menu-path entries that were verified by hand and carry AppleScript fallbacks; everything added since is a keystroke or AppleScript. A test enforces this for the two newer hosts.
+
+User-created menu-path shortcuts are unaffected: someone writing their own knows their own Office language.
 
 ## Layout
 
@@ -71,15 +73,33 @@ The mock (`tests/hs_mock.lua`) implements event taps, timers, the app watcher, J
 
 The manager is ~400 lines of JavaScript embedded in `init.lua` as a string, generating three near-identical host pages. `tests/ui/check.js` extracts that exact markup, loads it in jsdom, and drives it: tab switching and theming, per-host filtering, the add/edit/remove forms, and the messages the engine would receive. It exists because a typo in one generated element id would otherwise only surface on the user's Mac.
 
+## Development builds
+
+`build/build-local.sh` produces a build with bundle id `…excel-alt-shortcuts.dev`. That single change cascades:
+
+- macOS keys **preferences** and the **Accessibility grant** by bundle id, so the dev build gets its own of each and cannot disturb the released app's.
+- `init.lua` checks for the `.dev` suffix and puts all state in `~/Library/Application Support/ExcelAlt-dev/` — its own `shortcuts.json`, `prefs.json` and `debug.log`.
+- `launcher.c` checks the same suffix and uses `~/.hammerspoon-xldev` as its fallback config directory, so an ignored `MJConfigFile` cannot make one build load the other's engine (see mistake #5).
+- `XL_NO_UPDATES=1` strips `SUFeedURL`, so Sparkle in a dev build has no feed to check.
+
+Both apps can therefore be installed at once. They should not be *running* at once: two engines watching Excel would both fire on every sequence.
+
 ## Diagnosing a shortcut that does nothing
 
-Every AppleScript failure is written to `debug.log` with its host and the offending line:
+`debug.log` records every sequence that resolves, plus every AppleScript or menu-path failure:
 
 ```
+fired [word] hfg — Grow font
 applescript FAILED [word] set strike through of font object of selection ...  -> ...
 ```
 
-Menu paths that cannot be found log similarly. So the first question for any "shortcut X doesn't work" report is the log — it distinguishes *the sequence never fired* (no line at all: check the overlay, the host toggle, Accessibility) from *the action is wrong* (a FAILED line naming it).
+That splits a "shortcut X doesn't work" report into three distinguishable cases:
+
+| log | meaning |
+|---|---|
+| no line at all | the sequence never matched — check the overlay, the host toggle, Accessibility |
+| `fired` + `FAILED` | the sequence works, the AppleScript behind it is wrong |
+| `fired`, no failure, nothing visible | the sequence works, the keystroke behind it is wrong (keystrokes cannot report failure) |
 
 ## Building the app (macOS)
 

@@ -7,7 +7,13 @@ cd "$(dirname "$0")/.."
 
 HS_VERSION="1.1.1"
 HS_URL="https://github.com/Hammerspoon/hammerspoon/releases/download/${HS_VERSION}/Hammerspoon-${HS_VERSION}.zip"
-BID="com.corgianalyst.excel-alt-shortcuts"
+# Identity is overridable so build-local.sh can produce a genuinely separate
+# app that installs alongside the released one: its own bundle id (hence its
+# own preferences, its own Accessibility grant and its own data directory),
+# its own name in the Dock. Unset = the real release identity.
+BID="${XL_BUNDLE_ID:-com.corgianalyst.excel-alt-shortcuts}"
+XL_BUNDLE_NAME="${XL_BUNDLE_NAME:-ExcelAlt}"
+XL_DISPLAY_NAME="${XL_DISPLAY_NAME:-⌥XL}"
 XL_VERSION="${XL_VERSION:-2.5}"
 XL_BUILD="${XL_BUILD:-1}"
 SPARKLE_PUBKEY="c2aHOy058alqEV8VJ/7MzioCtONcOmQWU0Df0LiMGac="
@@ -21,9 +27,9 @@ APP="dist/ExcelAlt.app"
 
 echo "→ Rebranding bundle"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BID" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleName ExcelAlt" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string ⌥XL" "$APP/Contents/Info.plist" 2>/dev/null || \
-  /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName ⌥XL" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $XL_BUNDLE_NAME" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $XL_DISPLAY_NAME" "$APP/Contents/Info.plist" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $XL_DISPLAY_NAME" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable ExcelAlt" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" "$APP/Contents/Info.plist" 2>/dev/null || true
@@ -31,8 +37,15 @@ echo "→ Rebranding bundle"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $XL_VERSION" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $XL_BUILD" "$APP/Contents/Info.plist"
 # In-app updates: feed + EdDSA public key (manual "Check for updates")
-/usr/libexec/PlistBuddy -c "Set :SUFeedURL https://raw.githubusercontent.com/continental-vito/xlalt/main/appcast.xml" "$APP/Contents/Info.plist" 2>/dev/null || \
-  /usr/libexec/PlistBuddy -c "Add :SUFeedURL string https://raw.githubusercontent.com/continental-vito/xlalt/main/appcast.xml" "$APP/Contents/Info.plist"
+if [ -n "${XL_NO_UPDATES:-}" ]; then
+  # Development builds carry no update feed at all: Sparkle then has nothing
+  # to compare against and can never offer to replace a dev build with the
+  # released one.
+  /usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$APP/Contents/Info.plist" 2>/dev/null || true
+else
+  /usr/libexec/PlistBuddy -c "Set :SUFeedURL https://raw.githubusercontent.com/continental-vito/xlalt/main/appcast.xml" "$APP/Contents/Info.plist" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c "Add :SUFeedURL string https://raw.githubusercontent.com/continental-vito/xlalt/main/appcast.xml" "$APP/Contents/Info.plist"
+fi
 /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBKEY" "$APP/Contents/Info.plist" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $SPARKLE_PUBKEY" "$APP/Contents/Info.plist"
 mv "$APP/Contents/MacOS/Hammerspoon" "$APP/Contents/MacOS/ExcelAltCore"

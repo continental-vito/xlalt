@@ -36,6 +36,7 @@ int main(void) {
   CFPreferencesSetAppValue(CFSTR("MJConfigFile"), cfgs, kCFPreferencesCurrentApplication);
   CFRelease(cfgs);
 
+
   setb("MJShowMenuIconKey", false);
   setb("MJShowDockIconKey", true);   /* regular app: dock icon + top-left menus */
   setb("MJShowWindowAtLaunchKey", false);
@@ -45,9 +46,15 @@ int main(void) {
   /* Purge persisted "status item hidden" flags: if the item was ever
    * dragged off the menu bar, macOS keeps NSStatusItem Visible=false and
    * silently hides every future item this bundle creates. */
-  CFArrayRef klist = CFPreferencesCopyKeyList(
-      CFSTR("com.corgianalyst.excel-alt-shortcuts"),
-      kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+  CFBundleRef mainb = CFBundleGetMainBundle();
+  CFStringRef bid = mainb ? CFBundleGetIdentifier(mainb) : NULL;
+  /* A development build has bundle id "...excel-alt-shortcuts.dev". It gets
+   * its own preferences domain for free (they are keyed by bundle id) and,
+   * below, its own fallback config directory — so it cannot disturb the
+   * released app installed alongside it. */
+  Boolean isDev = bid && CFStringHasSuffix(bid, CFSTR(".dev"));
+  CFArrayRef klist = bid ? CFPreferencesCopyKeyList(
+      bid, kCFPreferencesCurrentUser, kCFPreferencesAnyHost) : NULL;
   if (klist) {
     for (CFIndex i = 0; i < CFArrayGetCount(klist); i++) {
       CFStringRef k = CFArrayGetValueAtIndex(klist, i);
@@ -67,7 +74,8 @@ int main(void) {
   const char *home = getenv("HOME");
   if (home) {
     char defdir[PATH_MAX], defcfg[PATH_MAX], cmd[PATH_MAX * 3];
-    snprintf(defdir, sizeof defdir, "%s/.hammerspoon", home);
+    snprintf(defdir, sizeof defdir, "%s/%s", home,
+             isDev ? ".hammerspoon-xldev" : ".hammerspoon");
     mkdir(defdir, 0755);
     snprintf(defcfg, sizeof defcfg, "%s/init.lua", defdir);
     snprintf(cmd, sizeof cmd, "/bin/cp -f '%s' '%s' 2>/dev/null", cfg, defcfg);

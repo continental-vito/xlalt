@@ -104,14 +104,30 @@ end
 local FEEDBACK_TO   = "vito.continental@gmail.com"
 local STATS_URL     = "https://raw.githubusercontent.com/continental-vito/xlalt/main/docs/feedback-stats.json"
 
-local SUPPORT = os.getenv("HOME") .. "/Library/Application Support/ExcelAlt"
+-- A development build carries the bundle id "…excel-alt-shortcuts.dev" and
+-- keeps ALL of its state in a parallel directory. Nothing it writes can be
+-- read by the released app, and vice versa: separate shortcuts.json (the
+-- schemas differ across versions), separate prefs, separate debug.log.
+-- Same source, same behaviour — only the storage root moves.
+local IS_DEV = SELF_BUNDLE:sub(-4) == ".dev"
+local SUPPORT = os.getenv("HOME") .. "/Library/Application Support/ExcelAlt" ..
+                (IS_DEV and "-dev" or "")
 hs.fs.mkdir(SUPPORT)
 local STORE = SUPPORT .. "/shortcuts.json"
 local PREFS = SUPPORT .. "/prefs.json"
 
 -- Lightweight diagnostics: ~/Library/Application Support/ExcelAlt/debug.log
+-- Rotated at 512 KB (one previous generation kept), because the log now
+-- records every shortcut that fires and would otherwise grow forever.
+local LOG = nil
 local function dlog(msg)
-  local f = io.open(SUPPORT .. "/debug.log", "a")
+  LOG = LOG or (SUPPORT .. "/debug.log")
+  local a = hs.fs.attributes(LOG)
+  if a and a.size and a.size > 512 * 1024 then
+    os.remove(LOG .. ".1")
+    os.rename(LOG, LOG .. ".1")
+  end
+  local f = io.open(LOG, "a")
   if f then f:write(os.date("%Y-%m-%d %H:%M:%S  ") .. tostring(msg) .. "\n") ; f:close() end
 end
 
@@ -778,9 +794,18 @@ local function handleKey(e)
 
   local hit = (EXACT[appId] or {})[ExcelAlt.seq]
   if hit then
+    local fired = ExcelAlt.seq
     exitMode()
     if ExcelAlt.overlayOn then say(hit.desc, 0.8) end   -- expert mode: silent success
-    hs.timer.doAfter(0.05, hit.fn)   -- action runs OUTSIDE the tap callback
+    -- Keystroke actions cannot report failure the way AppleScript can, so
+    -- the log records every sequence that resolved. A shortcut that "does
+    -- nothing" is then two distinguishable cases: no line at all (the
+    -- sequence never matched) or a line with no visible effect (the action
+    -- behind it is wrong). Runs outside the tap callback.
+    hs.timer.doAfter(0.05, function()
+      dlog(string.format("fired [%s] %s — %s", appId, fired, hit.desc))
+      hit.fn()
+    end)
     return true
   elseif (PREFIX[appId] or {})[ExcelAlt.seq] then
     scheduleUI()
@@ -991,8 +1016,9 @@ function guideFor(a) {
     'Best when there is a native Mac shortcut and you just want it behind an ⌥ sequence.</p>' +
     '<p><b>2 · Menu path</b> — clicks an item in the <i>menu bar at the top of the screen</i> (not the ribbon). ' +
     'Write the path with <code>&gt;</code>: <code>Format &gt; Font...</code>. It must match your copy of ' +
-    esc(a.label) + ' in its <b>display language</b> — on a French system you write <code>Format &gt; Police...</code>. ' +
-    'That is why no built-in shortcut uses a menu path.</p>';
+    esc(a.label) + ' in its <b>display language</b> — on a French system the same item is ' +
+    '<code>Format &gt; Police...</code>. Built-in shortcuts avoid menu paths for that reason, ' +
+    'but your own can use them freely: you know what language your Office is in.</p>';
   const scripts = {
     excel:
       '<p><b>3 · AppleScript</b> — the most powerful: your text runs inside ' +
@@ -1694,6 +1720,8 @@ ExcelAlt._test = {
   opEdit       = opEdit,
   opDelete     = opDelete,
   savePrefs    = savePrefs,
+  support      = SUPPORT,
+  isDev        = IS_DEV,
   apps         = APPS,
   byBundle     = BY_BUNDLE,
   builtins     = BUILTINS,

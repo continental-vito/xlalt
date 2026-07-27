@@ -30,33 +30,58 @@ git push
 bash build/build-local.sh
 ```
 
-Runs the tests, builds the app with a dev version string, installs it to
-`~/Applications/ExcelAlt-dev.app`, and launches it. The released build in
-`/Applications` is left alone.
 
-Details worth knowing:
+Runs the tests, builds, installs to `~/Applications/ExcelAlt-dev.app`, and
+launches it.
 
-- **Version string.** Dev builds are stamped
-  `<lasttag>-dev.<branch>.<sha>` — a `+` suffix means uncommitted changes were
-  in the tree. Feedback emails and the About window therefore never report a
-  released version number for a build that isn't one.
-- **Sparkle.** `CFBundleVersion` is forced to 90000+ locally, so the live
-  appcast can never offer to "update" a dev build back down to the release.
-- **Config backup.** `shortcuts.json` is snapshotted to `~/.xlalt-backups/`
-  before every build, 20 snapshots retained. If a dev build migrates the
-  schema and you then go back to the release, restore from there.
-- **One at a time.** Both builds share the bundle id and both rewrite
-  `~/.hammerspoon/init.lua` at launch, so they cannot run side by side. The
-  script kills any running instance first. Switching back to the release just
-  means quitting and opening `/Applications/ExcelAlt.app` — it restores its own
-  `init.lua`.
+**The dev build is a different app.** It carries the bundle id
+`com.corgianalyst.excel-alt-shortcuts.dev`, and macOS keys almost everything
+that matters off that:
+
+| | released ⌥XL | ⌥XL (dev) |
+|---|---|---|
+| location | `/Applications/ExcelAlt.app` | `~/Applications/ExcelAlt-dev.app` |
+| data, prefs, log | `…/Application Support/ExcelAlt/` | `…/Application Support/ExcelAlt-dev/` |
+| preferences domain | `…excel-alt-shortcuts` | `…excel-alt-shortcuts.dev` |
+| Accessibility grant | its own | its own |
+| fallback config dir | `~/.hammerspoon` | `~/.hammerspoon-xldev` |
+| update feed | live appcast | none (`SUFeedURL` stripped) |
+
+So the released app's shortcuts, preferences and permission survive anything
+the dev build does, including a `shortcuts.json` schema change. On first run
+the dev build is *seeded* with a copy of your current shortcuts so the lists
+look familiar; after that the two files are independent.
+
+**Don't run both at once.** They can coexist on disk, but two engines watching
+Excel would both fire on every sequence. Quit the released ⌥XL while testing;
+the script only stops previous *dev* builds.
+
+Other details:
+
+- **Version string.** Dev builds are stamped `<lasttag>-dev.<branch>.<sha>` —
+  a `+` suffix means uncommitted changes were in the tree. Feedback emails and
+  the About window therefore never report a released version number for a
+  build that isn't one.
 - **Accessibility.** Ad-hoc signing changes the code hash on every build, so
-  macOS may drop the grant. `bash build/build-local.sh --reset-tcc` clears the
-  stale entry and forces a fresh prompt. This goes away with a Developer ID
-  certificate.
+  macOS may drop the grant. `--reset-tcc` clears the dev entry and forces a
+  fresh prompt. This goes away with a Developer ID certificate.
+- **Backups.** The released `shortcuts.json` is still snapshotted to
+  `~/.xlalt-backups/` before every build (20 kept). The dev build should never
+  touch it; this is how you would find out if that ever stopped being true.
 
 Flags: `--no-launch`, `--reset-tcc`, `--package` (also builds the DMG, ~a
 minute slower, only needed when testing the installer itself).
+
+Removing the dev build completely:
+
+```bash
+rm -rf ~/Applications/ExcelAlt-dev.app \
+       ~/Library/Application\ Support/ExcelAlt-dev \
+       ~/.hammerspoon-xldev
+```
+
+Then remove "⌥XL (dev)" from System Settings → Privacy & Security →
+Accessibility.
 
 ## Shipping
 

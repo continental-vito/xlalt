@@ -27,22 +27,39 @@ for arg in "$@"; do
 done
 
 DEV_APP="$HOME/Applications/ExcelAlt-dev.app"
-CONFIG="$HOME/Library/Application Support/Excel Alt Shortcuts/shortcuts.json"
+LIVE_CONFIG="$HOME/Library/Application Support/ExcelAlt/shortcuts.json"
+DEV_SUPPORT="$HOME/Library/Application Support/ExcelAlt-dev"
 BACKUPS="$HOME/.xlalt-backups"
 
+# The dev build is a SEPARATE APP: its own bundle id, so macOS gives it its
+# own preferences and its own Accessibility entry, and the engine puts its
+# data in ExcelAlt-dev/ rather than ExcelAlt/. The released app in
+# /Applications is never read from, written to, or replaced.
+export XL_BUNDLE_ID="com.corgianalyst.excel-alt-shortcuts.dev"
+export XL_BUNDLE_NAME="ExcelAlt-dev"
+export XL_DISPLAY_NAME="⌥XL (dev)"
+export XL_NO_UPDATES=1
+
 # ---------------------------------------------------------------- safety net
-# shortcuts.json is user data the released build also reads. If a dev build
-# writes a new schema, going back to the release means handing it a file it
-# does not understand — so snapshot it before every single build.
-if [ -f "$CONFIG" ]; then
+# Belt and braces: snapshot the RELEASED app's shortcuts.json before every
+# build. The dev build should never touch it, and this is how we would know
+# if that ever stopped being true.
+if [ -f "$LIVE_CONFIG" ]; then
   mkdir -p "$BACKUPS"
   STAMP=$(date +%Y%m%d-%H%M%S)
-  cp "$CONFIG" "$BACKUPS/shortcuts-$STAMP.json"
-  # Keep the 20 most recent snapshots.
+  cp "$LIVE_CONFIG" "$BACKUPS/shortcuts-$STAMP.json"
   ls -1t "$BACKUPS"/shortcuts-*.json 2>/dev/null | tail -n +21 | while read -r f; do rm -f "$f"; done
-  echo "→ Config backed up to $BACKUPS/shortcuts-$STAMP.json"
+  echo "→ Released app's config snapshotted to $BACKUPS/shortcuts-$STAMP.json"
 else
-  echo "→ No shortcuts.json yet (first run) — nothing to back up"
+  echo "→ No released shortcuts.json found — nothing to snapshot"
+fi
+
+# Start the dev build from a copy of the real shortcuts so the lists look
+# familiar, but only once: after that the dev app owns its own file.
+if [ ! -f "$DEV_SUPPORT/shortcuts.json" ] && [ -f "$LIVE_CONFIG" ]; then
+  mkdir -p "$DEV_SUPPORT"
+  cp "$LIVE_CONFIG" "$DEV_SUPPORT/shortcuts.json"
+  echo "→ Seeded the dev app with a copy of your current shortcuts"
 fi
 
 # --------------------------------------------------------------------- tests
@@ -77,15 +94,17 @@ else
 fi
 
 # ------------------------------------------------------------------- install
-echo "→ Stopping any running ExcelAlt"
-# Released and dev builds share a bundle id and both rewrite
-# ~/.hammerspoon/init.lua at launch — only one can run at a time.
-pkill -x ExcelAlt ExcelAltCore 2>/dev/null || true
+# Only the previous DEV build is stopped; a running release build is left
+# alone. They have separate bundle ids, separate config dirs and separate
+# data, so both can run at once — but two engines both watching Excel would
+# double-fire every shortcut, so quit the release app while you test.
+echo "→ Stopping any running dev build"
+pkill -f "ExcelAlt-dev.app" 2>/dev/null || true
 sleep 1
 
 if [ -n "$RESET_TCC" ]; then
-  echo "→ Clearing Accessibility grant (you will be re-prompted)"
-  tccutil reset Accessibility com.corgianalyst.excel-alt-shortcuts || true
+  echo "→ Clearing the dev build's Accessibility grant (you will be re-prompted)"
+  tccutil reset Accessibility "$XL_BUNDLE_ID" || true
 fi
 
 mkdir -p "$HOME/Applications"
@@ -103,12 +122,20 @@ fi
 
 cat <<NOTES
 
-  Ad-hoc signing changes the code hash every build, so macOS may ask for
-  Accessibility again. If the shortcuts are dead and no prompt appears,
-  re-run with --reset-tcc.
+  This is a separate app from the one in /Applications:
+    bundle id   $XL_BUNDLE_ID
+    data        ~/Library/Application Support/ExcelAlt-dev/
+    log         ~/Library/Application Support/ExcelAlt-dev/debug.log
+  Your released ⌥XL and its shortcuts are untouched.
 
-  Back to the released build: quit this one, open /Applications/ExcelAlt.app.
-  It rewrites ~/.hammerspoon/init.lua itself, so its own code returns. If
-  shortcuts.json changed shape in the meantime, restore a snapshot from
-  $BACKUPS.
+  Quit the released ⌥XL while testing — two engines watching the same app
+  would both fire on every sequence.
+
+  macOS will ask for Accessibility for "⌥XL (dev)" separately. Ad-hoc
+  signing changes the code hash every build, so it may ask again after a
+  rebuild; if shortcuts are dead and nothing is asked, re-run --reset-tcc.
+
+  Done testing: quit ⌥XL (dev) and reopen /Applications/ExcelAlt.app.
+  To remove the dev build entirely:
+    rm -rf "$DEV_APP" "$DEV_SUPPORT" ~/.hammerspoon-xldev
 NOTES
