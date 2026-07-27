@@ -1,4 +1,4 @@
-⌥XL — Windows Alt shortcuts for Excel on Mac
+⌥XL — Windows Alt shortcuts for Excel, PowerPoint and Word on Mac
 =============================================
 
 INSTALL
@@ -10,7 +10,8 @@ INSTALL
    The shortcuts activate on their own a couple of seconds later.
 
 USE
-• Open Excel, tap the ⌥ (Option) key once. The KeyTips panel appears.
+• Open Excel, PowerPoint or Word, tap the ⌥ (Option) key once. The KeyTips
+  panel appears and names the app whose shortcuts are active.
 • Type a Windows sequence: H O I autofit, H V V paste values,
   H B A all borders, H 0 / H 9 decimals, = AutoSum, W F F freeze…
 • Esc cancels. Holding ⌥ with another key still works as a normal

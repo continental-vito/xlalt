@@ -1,0 +1,8 @@
+{
+  "name": "xl-manager-ui-tests",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Headless checks for the Shortcut Manager webview embedded in src/init.lua",
+  "scripts": { "test": "node check.js" },
+  "dependencies": { "jsdom": "^24.0.0" }
+}

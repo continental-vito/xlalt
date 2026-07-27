@@ -4,10 +4,10 @@
 
 # ⌥XL
 
-**Windows Alt shortcuts for Excel on Mac.**
+**Windows Alt shortcuts for Excel, PowerPoint and Word on Mac.**
 
-Tap the **⌥ Option** key in Excel, then type the sequence you already know from Windows.
-`H O I` autofits · `H V V` pastes values · `H B A` draws all borders · `W V G` toggles gridlines
+Tap the **⌥ Option** key, then type the sequence you already know from Windows.
+`H O I` autofits in Excel · `H I` adds a slide in PowerPoint · `H S 2` applies Heading 2 in Word
 
 ### [⬇ Download for macOS](https://github.com/continental-vito/xlalt/releases/latest/download/XL.dmg)
 
@@ -24,7 +24,7 @@ Tap the **⌥ Option** key in Excel, then type the sequence you already know fro
 
 ## Why
 
-Excel's ribbon shortcuts are muscle memory for anyone who learned the app on Windows — and they simply don't exist on the Mac. ⌥XL brings them back: one tap of Option enters sequence mode, a KeyTips panel shows what's available as you type, and ~50 built-in sequences map to real Excel actions. Add your own with keystrokes, menu paths, or AppleScript.
+Office's ribbon shortcuts are muscle memory for anyone who learned these apps on Windows — and they simply don't exist on the Mac. ⌥XL brings them back across **Excel, PowerPoint and Word**: one tap of Option enters sequence mode, a KeyTips panel shows what's available as you type, and the built-in sequences map to real actions in whichever app is in front. Each app keeps its own list, its own colour, and its own on/off switch. Add your own with keystrokes, menu paths, or AppleScript.
 
 ## Install
 
@@ -57,7 +57,9 @@ _Video coming soon._
 
 ## Shortcuts
 
-A selection of what ships built in — all editable and searchable in the app:
+The same sequence can mean different things in different apps, and the KeyTips panel always says which app it is driving. A selection of what ships built in — all editable and searchable:
+
+**Excel**
 
 | Sequence | Action | Sequence | Action |
 |---|---|---|---|
@@ -70,25 +72,46 @@ A selection of what ships built in — all editable and searchable in the app:
 | `A S A` | Sort ascending | `W F F` | Freeze panes |
 | `A T T` | Toggle AutoFilter | `W V G` | Toggle gridlines |
 
+**PowerPoint**
+
+| Sequence | Action | Sequence | Action |
+|---|---|---|---|
+| `H I` | New slide | `H G` / `H U` | Group / ungroup |
+| `H D` | Duplicate | `H A F` / `H A K` | Bring to front / send to back |
+| `H A C` | Align center | `S B` | Play from beginning |
+| `H F G` / `H F K` | Grow / shrink font | `S C` | Play from this slide |
+| `H C` / `H V` | Copy / paste formatting | `W N` / `W S` | Normal view / slide sorter |
+
+**Word**
+
+| Sequence | Action | Sequence | Action |
+|---|---|---|---|
+| `H S 1`…`H S 3` | Heading 1–3 | `H V V` | Paste text only |
+| `H S N` | Normal style | `N B` | Page break |
+| `H F G` / `H F K` | Grow / shrink font | `N F` | Footnote |
+| `H X` / `H B` | Superscript / subscript | `R C` | New comment |
+| `H A J` | Justify | `R T` | Track changes |
+
 ## Custom shortcuts
 
 Three ways to bind a sequence, all from the Shortcut Manager:
 
-- **Keystroke** — replay a combo Excel already knows: `cmd+shift+t`
-- **Menu path** — click Excel's macOS menu bar: `Edit > Clear > All`
+- **Keystroke** — replay a combo the app already knows: `cmd+shift+t`
+- **Menu path** — click the macOS menu bar: `Edit > Clear > All`
 - **AppleScript** — full automation: `set zoom of active window to 150`
 
-The in-app guide explains each one with examples.
+The in-app guide explains each one, with examples for the app whose tab you're on. Menu paths must match your copy of Office in its display language, which is why no built-in uses one outside Excel.
 
 ## Development
 
 ```bash
-lua5.4 tests/run_tests.lua     # headless test suite, no macOS required
+lua5.4 tests/run_tests.lua     # engine suite, no macOS required
+node tests/ui/check.js         # manager UI suite (npm install --prefix tests/ui)
 bash build/build-local.sh      # test + build + run a dev build on this Mac
 bash build/build-app.sh        # build + sign + DMG, as CI does (macOS only)
 ```
 
-`src/init.lua` is the engine; `tests/hs_mock.lua` mocks the macOS API so everything runs headless in CI. Work lands on `dev`; pushing a `v*` tag from `main` builds the app on a macOS runner, signs an update archive, and publishes the release plus the Sparkle appcast. Branching, the local test loop, and rollback are covered in **[`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)**.
+`src/init.lua` is the engine; `tests/hs_mock.lua` mocks the macOS API and `tests/ui/check.js` drives the manager webview in jsdom, so everything runs headless in CI. Supported apps are declared once in the `APPS` table — adding a fourth means a row there plus a `BUILTINS` set. Work lands on `dev`; pushing a `v*` tag from `main` builds the app on a macOS runner, signs an update archive, and publishes the release plus the Sparkle appcast. Branching, the local test loop, and rollback are covered in **[`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)**.
 
 **Before touching the event-tap code, read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** — tap callbacks hold the system keyboard, so they must never block or touch the window server.
 

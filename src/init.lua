@@ -17,6 +17,13 @@
 --  pinned on top, clear-all/contents/formats built-ins, freeze panes
 --  via locale-proof AppleScript instead of menu paths.
 --  v14: packaging — release DMG built & properly signed by macOS CI.
+--  v3.2: multi-host. Excel, PowerPoint and Word each get their own
+--  shortcut set, their own slice of shortcuts.json, their own accent in
+--  the manager, and their own on/off switch. Everything derives from the
+--  APPS table below, so a fourth host is a row there plus a BUILTINS set.
+--  shortcuts.json moved to schema v2 (per-host slices) and migrates v1
+--  files on load; the Excel slice is still mirrored to the old top-level
+--  keys so a rollback to v3.1 does not orphan the user's customs.
 -- =====================================================================
 
 -- Global state table FIRST (v8 crash fix: never index before init)
@@ -26,7 +33,10 @@ ExcelAlt = {
   overlayOn  = true,   -- KeyTips panel; expert users can switch it off
   mode       = false,
   seq        = "",
-  excelFront = false,  -- cached by the app watcher; NEVER queried per-event
+  activeApp  = nil,    -- "excel"|"powerpoint"|"word"|nil — cached by the app
+                       -- watcher; NEVER queried from inside a tap callback
+  excelFront = false,  -- legacy mirror of (activeApp == "excel")
+  appEnabled = { excel = true, powerpoint = true, word = true },
   tapsReady  = false,  -- true once Accessibility permission is granted
   bar        = nil,    -- menubar object held globally (GC fix)
   barIcon    = nil,
@@ -42,7 +52,36 @@ ExcelAlt = {
   permTimer  = nil,
 }
 
-local EXCEL   = "com.microsoft.Excel"
+-- ---------------------------------------------------------------------
+-- Supported hosts. Each entry owns its own shortcut set, its own slice of
+-- shortcuts.json, and its own accent colour in the manager window.
+--   bundle  — canonical bundle id (matched case-insensitively, see BY_BUNDLE)
+--   as      — AppleScript application name
+--   accent  — theme colour, used by the manager UI and the KeyTips overlay
+-- ---------------------------------------------------------------------
+local APPS = {
+  { id = "excel", label = "Excel", bundle = "com.microsoft.Excel",
+    as = "Microsoft Excel", noun = "cells",
+    accent = "#0F6A3F", accent2 = "#1F8A55", accentDark = "#0C5733", tint = "#F5C542" },
+  { id = "powerpoint", label = "PowerPoint", bundle = "com.microsoft.Powerpoint",
+    as = "Microsoft PowerPoint", noun = "shapes",
+    accent = "#C43E1C", accent2 = "#E2603C", accentDark = "#9E3116", tint = "#FFAE86" },
+  { id = "word", label = "Word", bundle = "com.microsoft.Word",
+    as = "Microsoft Word", noun = "text",
+    accent = "#185ABD", accent2 = "#2B7CD3", accentDark = "#12489A", tint = "#8FC0FF" },
+}
+local APP = {}          -- id -> app record
+local BY_BUNDLE = {}    -- lowercased bundle id -> app id
+for _, a in ipairs(APPS) do
+  APP[a.id] = a
+  BY_BUNDLE[a.bundle:lower()] = a.id
+end
+-- PowerPoint has shipped under both "com.microsoft.Powerpoint" and
+-- "...PowerPoint" depending on version; the lookup is lowercased so either
+-- spelling resolves. Extra aliases go here.
+BY_BUNDLE["com.microsoft.powerpoint"] = "powerpoint"
+
+local EXCEL   = APP.excel.bundle   -- kept: referenced by startup diagnostics
 local SELF_BUNDLE = (hs.processInfo and hs.processInfo.bundleID) or "com.corgianalyst.excel-alt-shortcuts"
 local APPNAME = "⌥XL"
 local SEQ_TIMEOUT = 4
@@ -170,63 +209,67 @@ local function sendFeedback(rating, comment, contact)
 end
 
 -- ---------------------------------------------------------------------
--- Excel helpers
+-- Host helpers. Every action is bound to the app whose shortcut set it
+-- belongs to, so the same factory serves Excel, PowerPoint and Word.
+-- All of these run OUTSIDE the tap callback (dispatched via doAfter).
 -- ---------------------------------------------------------------------
-local function excelApp()
-  return hs.application.get(EXCEL)
+local function hostApp(appId)
+  return hs.application.get(APP[appId] and APP[appId].bundle or EXCEL)
 end
 
-local function stroke(mods, key)
+local function stroke(appId, mods, key)
   return function()
-    local app = excelApp()
-    hs.eventtap.keyStroke(mods, key, 0, app)
-  end
-end
-
--- Click a menu item by path; final element falls back to prefix match
-local function menu(path)
-  return function()
-    local app = excelApp(); if not app then return end
-    if app:selectMenuItem(path) then return end
-    local pat = "^" .. path[#path]:gsub("%p", "%%%1")
-    local p2 = {}
-    for i = 1, #path - 1 do p2[i] = path[i] end
-    p2[#path] = pat
-    app:selectMenuItem(p2, true)
+    hs.eventtap.keyStroke(mods, key, 0, hostApp(appId))
   end
 end
 
 -- Click a menu path; if the item can't be found (localization, version
 -- differences), run the AppleScript fallback instead.
-local function menuThen(path, fallbackFn)
+local function menuThen(appId, path, fallbackFn)
   return function()
-    local app = excelApp(); if not app then return end
+    local app = hostApp(appId); if not app then return end
     if app:selectMenuItem(path) then return end
     local pat = "^" .. path[#path]:gsub("%p", "%%%1")
     local p2 = {}
     for i = 1, #path - 1 do p2[i] = path[i] end
     p2[#path] = pat
     if app:selectMenuItem(p2, true) then return end
+    dlog("menu path not found in " .. appId .. ": " .. table.concat(path, " > "))
     if fallbackFn then fallbackFn() end
   end
 end
 
-local function ascript(body)
+-- AppleScript failures are silent by design (the user just sees nothing
+-- happen), which made broken actions impossible to diagnose from a bug
+-- report. Every failure now names the host and the offending line in
+-- debug.log, so one log settles which entries are wrong.
+local function ascript(appId, body)
+  local target = (APP[appId] and APP[appId].as) or "Microsoft Excel"
   return function()
-    hs.osascript.applescript('tell application "Microsoft Excel"\n' .. body .. '\nend tell')
+    local ok, _, err = hs.osascript.applescript(
+      'tell application "' .. target .. '"\n' .. body .. '\nend tell')
+    if not ok then
+      dlog("applescript FAILED [" .. appId .. "] " ..
+           (body:match("[^\n]*") or "") .. "  -> " .. tostring(err))
+    end
+    return ok
   end
 end
+
+-- Excel-only shorthand: the built-ins below predate multi-app support and
+-- read better without the id repeated on every line.
+local function xl(body) return ascript("excel", body) end
 
 local function border(edge, style, weight)
   style  = style  or "continuous"
   weight = weight or "border weight thin"
-  return ascript(string.format(
+  return xl(string.format(
     'set b to (get border of selection which border %s)\nset line style of b to %s\nset weight of b to %s',
     edge, style, weight))
 end
 
 local function noBorders()
-  return ascript([[
+  return xl([[
 repeat with e in {edge bottom, edge top, edge left, edge right, inside horizontal, inside vertical}
   set line style of (get border of selection which border (contents of e)) to line style none
 end repeat]])
@@ -239,7 +282,7 @@ local function allBorders(edges, weight)
     "  set line style of b to continuous",
     "  set weight of b to " .. weight,
     "end repeat" }
-  return ascript(table.concat(lines, "\n"))
+  return xl(table.concat(lines, "\n"))
 end
 
 -- Decimal adjust heuristic (tested against #,##0.00 / $ / % / multi-section)
@@ -291,14 +334,22 @@ local function decimals(delta)
 end
 
 local function setFormat(fmt)
-  return ascript('set number format of selection to "' .. fmt .. '"')
+  return xl('set number format of selection to "' .. fmt .. '"')
 end
 
 -- ---------------------------------------------------------------------
--- Built-in shortcut map (declarative: every entry knows its own command,
--- so the manager can display and edit it)
+-- Built-in shortcut maps, one per host (declarative: every entry knows its
+-- own command, so the manager can display and edit it).
+--
+-- PowerPoint and Word deliberately use KEYSTROKES wherever a native Mac
+-- shortcut exists, and AppleScript otherwise. Menu paths are avoided in
+-- built-ins: they must match the host's display language, which breaks on
+-- any non-English macOS. Users can still create menu-path shortcuts of
+-- their own from the manager, where they can see and fix them.
 -- ---------------------------------------------------------------------
-local BUILTIN = {
+local BUILTINS = {}
+
+BUILTINS.excel = {
   { seq = "hvv", desc = "Paste values",      kind = "applescript", script = "paste special selection what paste values" },
   { seq = "hvf", desc = "Paste formulas",    kind = "applescript", script = "paste special selection what paste formulas" },
   { seq = "hvt", desc = "Paste formats",     kind = "applescript", script = "paste special selection what paste formats" },
@@ -358,12 +409,140 @@ local BUILTIN = {
   { seq = "wfu", desc = "Unfreeze panes",       kind = "applescript", script = "set freeze panes of active window to false" },
 }
 
+BUILTINS.powerpoint = {
+  -- Home: text
+  { seq = "h1",  desc = "Bold",                 kind = "keystroke", mods = "cmd", key = "b" },
+  { seq = "h2",  desc = "Italic",               kind = "keystroke", mods = "cmd", key = "i" },
+  { seq = "h3",  desc = "Underline",            kind = "keystroke", mods = "cmd", key = "u" },
+  { seq = "h4",  desc = "Strikethrough",        kind = "keystroke", mods = "cmd+shift", key = "x" },
+  { seq = "hal", desc = "Align left",           kind = "keystroke", mods = "cmd", key = "l" },
+  { seq = "hac", desc = "Align center",         kind = "keystroke", mods = "cmd", key = "e" },
+  { seq = "har", desc = "Align right",          kind = "keystroke", mods = "cmd", key = "r" },
+  { seq = "haj", desc = "Justify",              kind = "keystroke", mods = "cmd", key = "j" },
+  { seq = "hfg", desc = "Grow font",            kind = "keystroke", mods = "cmd+shift", key = "." },
+  { seq = "hfk", desc = "Shrink font",          kind = "keystroke", mods = "cmd+shift", key = "," },
+
+  -- Home: slides
+  { seq = "hi",  desc = "New slide",            kind = "keystroke", mods = "cmd+shift", key = "n" },
+  { seq = "hd",  desc = "Duplicate",            kind = "keystroke", mods = "cmd+shift", key = "d" },
+
+  -- Home: arrange
+  { seq = "hg",  desc = "Group",                kind = "keystroke", mods = "cmd+alt", key = "g" },
+  { seq = "hu",  desc = "Ungroup",              kind = "keystroke", mods = "cmd+alt+shift", key = "g" },
+  { seq = "haf", desc = "Bring to front",       kind = "keystroke", mods = "cmd+shift", key = "f" },
+  { seq = "hak", desc = "Send to back",         kind = "keystroke", mods = "cmd+shift", key = "b" },
+
+  -- Home: editing
+  { seq = "hc",  desc = "Copy formatting",      kind = "keystroke", mods = "cmd+shift", key = "c" },
+  { seq = "hv",  desc = "Paste formatting",     kind = "keystroke", mods = "cmd+shift", key = "v" },
+  { seq = "hfd", desc = "Find",                 kind = "keystroke", mods = "cmd", key = "f" },
+  { seq = "he",  desc = "Replace",              kind = "keystroke", mods = "cmd+shift", key = "h" },
+
+  -- Insert
+  { seq = "nk",  desc = "Hyperlink",            kind = "keystroke", mods = "cmd", key = "k" },
+
+  -- Slide Show
+  { seq = "sb",  desc = "Play from beginning",  kind = "keystroke", mods = "cmd+shift", key = "return" },
+  { seq = "sc",  desc = "Play from this slide", kind = "keystroke", mods = "cmd", key = "return" },
+
+  -- View
+  { seq = "wn",  desc = "Normal view",          kind = "keystroke", mods = "cmd", key = "1" },
+  { seq = "ws",  desc = "Slide sorter",         kind = "keystroke", mods = "cmd", key = "2" },
+  { seq = "wt",  desc = "Notes page",           kind = "keystroke", mods = "cmd", key = "3" },
+}
+
+BUILTINS.word = {
+  -- Home: font
+  { seq = "h1",  desc = "Bold",                 kind = "keystroke", mods = "cmd", key = "b" },
+  { seq = "h2",  desc = "Italic",               kind = "keystroke", mods = "cmd", key = "i" },
+  { seq = "h3",  desc = "Underline",            kind = "keystroke", mods = "cmd", key = "u" },
+  { seq = "h4",  desc = "Strikethrough",        kind = "applescript",
+    script = "set strike through of font object of selection to not (strike through of font object of selection)" },
+  { seq = "hfg", desc = "Grow font",            kind = "applescript",
+    script = "set font size of font object of selection to ((font size of font object of selection) + 1)" },
+  { seq = "hfk", desc = "Shrink font",          kind = "applescript",
+    script = "set font size of font object of selection to ((font size of font object of selection) - 1)" },
+  { seq = "hx",  desc = "Superscript",          kind = "applescript",
+    script = "set superscript of font object of selection to not (superscript of font object of selection)" },
+  { seq = "hb",  desc = "Subscript",            kind = "applescript",
+    script = "set subscript of font object of selection to not (subscript of font object of selection)" },
+  { seq = "huc", desc = "All caps",             kind = "applescript",
+    script = "set all caps of font object of selection to not (all caps of font object of selection)" },
+
+  -- Home: paragraph
+  { seq = "hal", desc = "Align left",           kind = "keystroke", mods = "cmd", key = "l" },
+  { seq = "hac", desc = "Align center",         kind = "keystroke", mods = "cmd", key = "e" },
+  { seq = "har", desc = "Align right",          kind = "keystroke", mods = "cmd", key = "r" },
+  { seq = "haj", desc = "Justify",              kind = "keystroke", mods = "cmd", key = "j" },
+
+  -- Home: styles
+  { seq = "hs1", desc = "Heading 1",            kind = "keystroke", mods = "cmd+alt", key = "1" },
+  { seq = "hs2", desc = "Heading 2",            kind = "keystroke", mods = "cmd+alt", key = "2" },
+  { seq = "hs3", desc = "Heading 3",            kind = "keystroke", mods = "cmd+alt", key = "3" },
+  { seq = "hsn", desc = "Normal style",         kind = "keystroke", mods = "cmd+shift", key = "n" },
+
+  -- Home: editing & clipboard
+  { seq = "hvv", desc = "Paste text only",      kind = "keystroke", mods = "cmd+alt+shift", key = "v" },
+  { seq = "hc",  desc = "Copy formatting",      kind = "keystroke", mods = "cmd+shift", key = "c" },
+  { seq = "hv",  desc = "Paste formatting",     kind = "keystroke", mods = "cmd+shift", key = "v" },
+  { seq = "hfd", desc = "Find",                 kind = "keystroke", mods = "cmd", key = "f" },
+  { seq = "he",  desc = "Replace",              kind = "keystroke", mods = "cmd+shift", key = "h" },
+
+  -- Insert
+  { seq = "nk",  desc = "Hyperlink",            kind = "keystroke", mods = "cmd", key = "k" },
+  { seq = "nb",  desc = "Page break",           kind = "keystroke", mods = "cmd", key = "return" },
+  { seq = "nf",  desc = "Footnote",             kind = "keystroke", mods = "cmd+alt", key = "f" },
+
+  -- Review
+  { seq = "rc",  desc = "New comment",          kind = "keystroke", mods = "cmd+alt", key = "a" },
+  { seq = "rt",  desc = "Track changes",        kind = "keystroke", mods = "cmd+shift", key = "e" },
+  { seq = "rw",  desc = "Word count",           kind = "applescript",
+    script = "get count of words of active document" },
+
+  -- View
+  { seq = "wp",  desc = "Print layout view",    kind = "keystroke", mods = "cmd+alt", key = "p" },
+  { seq = "wo",  desc = "Outline view",         kind = "keystroke", mods = "cmd+alt", key = "o" },
+  { seq = "wd",  desc = "Draft view",           kind = "keystroke", mods = "cmd+alt", key = "n" },
+}
+
 -- ---------------------------------------------------------------------
 -- Custom shortcuts + disabled built-ins (manager persistence)
+--
+-- Schema v2 keys everything under `apps`, one slice per host. v1 files were
+-- flat (custom/disabled/renames at the top level) and Excel-only, so they
+-- migrate into apps.excel on load.
+--
+-- saveStore() ALSO mirrors the Excel slice back to the top level. That is
+-- deliberate: it keeps the file readable by v3.1 and earlier, so rolling
+-- the app back does not silently orphan the user's Excel customs.
 -- ---------------------------------------------------------------------
-local store = readJSON(STORE) or { custom = {}, disabled = {} }
-store.custom, store.disabled = store.custom or {}, store.disabled or {}
-store.renames = store.renames or {}
+local function blankSlice() return { custom = {}, disabled = {}, renames = {} } end
+
+local store = readJSON(STORE) or {}
+local migrated = false
+if type(store.apps) ~= "table" then
+  local legacy = {
+    custom   = type(store.custom) == "table" and store.custom or {},
+    disabled = type(store.disabled) == "table" and store.disabled or {},
+    renames  = type(store.renames) == "table" and store.renames or {},
+  }
+  migrated = (#legacy.custom > 0) or (next(legacy.disabled) ~= nil) or (next(legacy.renames) ~= nil)
+  store.apps = { excel = legacy }
+end
+for _, a in ipairs(APPS) do
+  local slice = store.apps[a.id]
+  if type(slice) ~= "table" then slice = blankSlice() end
+  slice.custom   = type(slice.custom) == "table" and slice.custom or {}
+  slice.disabled = type(slice.disabled) == "table" and slice.disabled or {}
+  slice.renames  = type(slice.renames) == "table" and slice.renames or {}
+  store.apps[a.id] = slice
+end
+store.version = 2
+if migrated then
+  dlog("store: migrated v1 (Excel-only) shortcuts.json to v2 multi-app schema")
+end
+
+local function slice(appId) return store.apps[appId] or store.apps.excel end
 
 local function parseMods(str)
   local mods = {}
@@ -379,16 +558,17 @@ local function parsePath(str)
   return path
 end
 
--- One factory for built-ins AND customs: entry -> executable function
-local function fnFor(e)
+-- One factory for built-ins AND customs: entry -> executable function,
+-- bound to the host whose shortcut set the entry belongs to.
+local function fnFor(e, appId)
   if e.kind == "lua" then
     return e.fn
   elseif e.kind == "keystroke" then
-    return stroke(parseMods(e.mods), e.key or "")
+    return stroke(appId, parseMods(e.mods), e.key or "")
   elseif e.kind == "menu" then
-    return menuThen(parsePath(e.path), e.fallback and ascript(e.fallback) or nil)
+    return menuThen(appId, parsePath(e.path), e.fallback and ascript(appId, e.fallback) or nil)
   else
-    return ascript(e.script or "")
+    return ascript(appId, e.script or "")
   end
 end
 
@@ -416,11 +596,13 @@ local function paramFor(e)
   return ""
 end
 
-local exact, prefixes, catalog = {}, {}, {}
+-- Lookup tables, one set per host. Indexed inside the tap callback, so
+-- these are plain tables: rebuilding replaces their contents, never blocks.
+local EXACT, PREFIX, CATALOG = {}, {}, {}
 
-
-local function rebuild()
-  exact, prefixes, catalog = {}, {}, {}
+local function rebuildApp(appId)
+  local exact, prefixes, catalog = {}, {}, {}
+  local sl = slice(appId)
   local function add(seq, desc, fn, builtin, meta)
     exact[seq] = { desc = desc, fn = fn }
     for i = 1, #seq - 1 do prefixes[seq:sub(1, i)] = true end
@@ -428,24 +610,29 @@ local function rebuild()
     for k, v in pairs(meta or {}) do row[k] = v end
     catalog[#catalog + 1] = row
   end
-  for _, b in ipairs(BUILTIN) do
-    if not store.disabled[b.seq] then
-      local r = store.renames[b.seq] or {}
+  for _, b in ipairs(BUILTINS[appId] or {}) do
+    if not sl.disabled[b.seq] then
+      local r = sl.renames[b.seq] or {}
       local seq  = (r.seq and #r.seq > 0) and r.seq:lower() or b.seq
       local desc = (r.desc and #r.desc > 0) and r.desc or b.desc
-      add(seq, desc, fnFor(b), true, {
+      add(seq, desc, fnFor(b, appId), true, {
         orig = b.seq, kind = b.kind, luaKind = (b.kind == "lua"),
         cmd = cmdFor(b), param = paramFor(b) })
     end
   end
-  for _, c in ipairs(store.custom) do
+  for _, c in ipairs(sl.custom) do
     if c.seq and #c.seq > 0 then
-      add(c.seq:lower(), c.desc or "Custom", fnFor(c), false, {
+      add(c.seq:lower(), c.desc or "Custom", fnFor(c, appId), false, {
         orig = c.seq, kind = c.kind, luaKind = false,
         cmd = cmdFor(c), param = paramFor(c) })
     end
   end
   table.sort(catalog, function(a, b) return a.seq < b.seq end)
+  EXACT[appId], PREFIX[appId], CATALOG[appId] = exact, prefixes, catalog
+end
+
+local function rebuild()
+  for _, a in ipairs(APPS) do rebuildApp(a.id) end
 end
 rebuild()
 
@@ -459,8 +646,11 @@ end
 local function overlayShow()
   overlayHide()
   if not ExcelAlt.overlayOn then return end
+  local appId = ExcelAlt.activeApp
+  local host = APP[appId]
+  if not host then return end
   local hints = {}
-  for _, item in ipairs(catalog) do
+  for _, item in ipairs(CATALOG[appId] or {}) do
     if item.seq:sub(1, #ExcelAlt.seq) == ExcelAlt.seq then
       hints[#hints + 1] = item
       if #hints == 9 then break end
@@ -481,8 +671,14 @@ local function overlayShow()
   c:appendElements({
     type = "text",
     text = "⌥  " .. ExcelAlt.seq:upper() .. "▮",
-    textSize = 17, textColor = { hex = "#F5C542" },
-    frame = { x = PAD, y = PAD - 2, w = W - PAD * 2, h = 26 } })
+    textSize = 17, textColor = { hex = host.tint },
+    frame = { x = PAD, y = PAD - 2, w = W - PAD * 2 - 90, h = 26 } })
+  -- Which host's set is active: the same letters mean different things in
+  -- Excel and Word, so the panel always says which one it is driving.
+  c:appendElements({
+    type = "text", text = host.label,
+    textSize = 11, textColor = { hex = "#7E8A84" }, textAlignment = "right",
+    frame = { x = W - PAD - 90, y = PAD + 3, w = 90, h = 18 } })
   if #hints == 0 then
     c:appendElements({ type = "text", text = "no match — Esc to cancel",
       textSize = 13, textColor = { hex = "#999999" },
@@ -545,7 +741,7 @@ end
 -- and NO UI — no canvas, no alerts, no window-server calls of any kind.
 -- State only; everything visible happens via scheduleUI()/say().
 local function handleFlags(e)
-  if not ExcelAlt.enabled or not ExcelAlt.excelFront then return false end
+  if not ExcelAlt.enabled or not ExcelAlt.activeApp then return false end
   local alt = e:getFlags().alt
   if alt and not ExcelAlt.optDown then
     ExcelAlt.optDown, ExcelAlt.optAlone = true, true
@@ -559,7 +755,8 @@ local function handleFlags(e)
 end
 
 local function handleKey(e)
-  if not ExcelAlt.enabled or not ExcelAlt.excelFront then
+  local appId = ExcelAlt.activeApp
+  if not ExcelAlt.enabled or not appId then
     if ExcelAlt.mode then exitMode() end
     return false
   end
@@ -579,13 +776,13 @@ local function handleKey(e)
   if ExcelAlt.timeout then ExcelAlt.timeout:stop() end
   ExcelAlt.timeout = hs.timer.doAfter(SEQ_TIMEOUT, exitMode)
 
-  local hit = exact[ExcelAlt.seq]
+  local hit = (EXACT[appId] or {})[ExcelAlt.seq]
   if hit then
     exitMode()
     if ExcelAlt.overlayOn then say(hit.desc, 0.8) end   -- expert mode: silent success
     hs.timer.doAfter(0.05, hit.fn)   -- action runs OUTSIDE the tap callback
     return true
-  elseif prefixes[ExcelAlt.seq] then
+  elseif (PREFIX[appId] or {})[ExcelAlt.seq] then
     scheduleUI()
     return true
   else
@@ -611,7 +808,9 @@ end
 -- permission is granted, and shortcuts are enabled.
 -- ---------------------------------------------------------------------
 local function updateTaps()
-  local want = ExcelAlt.tapsReady and ExcelAlt.excelFront and ExcelAlt.enabled
+  local appId = ExcelAlt.activeApp
+  local want = ExcelAlt.tapsReady and appId ~= nil and ExcelAlt.enabled
+                 and ExcelAlt.appEnabled[appId] ~= false
   if want then
     if not ExcelAlt.flagsTap:isEnabled() then ExcelAlt.flagsTap:start() end
     if not ExcelAlt.keyTap:isEnabled()   then ExcelAlt.keyTap:start()   end
@@ -637,14 +836,15 @@ local function onAppEvent(_, event, app)
       pcall(function() ExcelAlt.quitKey:disable() end)
     end
   end
-  local isExcel = bid == EXCEL
+  local hostId = bid and BY_BUNDLE[bid:lower()] or nil
   if event == w.activated then
-    ExcelAlt.excelFront = isExcel
-  elseif isExcel then          -- Excel deactivated or quit
-    ExcelAlt.excelFront = false
+    ExcelAlt.activeApp = hostId
+  elseif hostId then           -- a supported host deactivated or quit
+    ExcelAlt.activeApp = nil
   else
     return                     -- some other app went away: nothing changes
   end
+  ExcelAlt.excelFront = (ExcelAlt.activeApp == "excel")   -- legacy mirror
   updateTaps()
 end
 
@@ -653,11 +853,12 @@ end
 -- ---------------------------------------------------------------------
 local MANAGER_HTML = [==[
 <!doctype html><html><head><meta charset="utf-8"><style>
-:root { --green:#0F6A3F; --green2:#1F8A55; --gold:#F5C542; --ink:#1c211e; --paper:#F7F5EF; }
+:root { --accent:#0F6A3F; --accent2:#1F8A55; --accentDark:#0C5733;
+        --gold:#F5C542; --ink:#1c211e; --paper:#F7F5EF; }
 * { box-sizing:border-box; margin:0; font-family:-apple-system,'SF Pro Text',Helvetica,sans-serif; }
 body { background:var(--paper); color:var(--ink); padding:0 0 40px; }
-header { background:linear-gradient(180deg,var(--green2),var(--green)); color:#fff;
-  padding:16px 24px; display:flex; align-items:center; gap:14px; }
+header { background:linear-gradient(180deg,var(--accent2),var(--accent)); color:#fff;
+  padding:16px 24px; display:flex; align-items:center; gap:14px; transition:background .18s; }
 header img { width:44px; height:44px; border-radius:10px; }
 header h1 { font-size:19px; font-weight:700; }
 header p { font-size:12px; opacity:.85; margin-top:2px; }
@@ -667,7 +868,7 @@ table { width:100%; border-collapse:collapse; background:#fff; border-radius:10p
 th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.8px;
   color:#6b7570; padding:10px 12px; border-bottom:1px solid #e6e3da; }
 td { padding:8px 12px; font-size:13px; border-bottom:1px solid #f0ede5; vertical-align:middle; }
-td.seq { font-family:'SF Mono',Menlo,monospace; font-weight:700; color:var(--green); white-space:nowrap; }
+td.seq { font-family:'SF Mono',Menlo,monospace; font-weight:700; color:var(--accent); white-space:nowrap; }
 td.seq::before { content:'⌥ '; color:var(--gold); }
 td.cmd { font-size:11.5px; color:#6b7570; max-width:260px; overflow:hidden;
   text-overflow:ellipsis; white-space:nowrap; }
@@ -675,36 +876,39 @@ tr:hover td { background:#fbfaf6; }
 .tag { font-size:10px; padding:2px 7px; border-radius:99px; background:#eef3ee; color:#4c6355; }
 .tag.custom { background:#fdf3d5; color:#8a6a12; }
 button { border:0; border-radius:7px; padding:6px 11px; font-size:12px; cursor:pointer; }
-button.edit { background:transparent; color:var(--green); font-weight:600; }
-button.edit:hover { background:#e9f2ec; }
+button.edit { background:transparent; color:var(--accent); font-weight:600; }
+button.edit:hover { background:rgba(0,0,0,.05); }
 button.del { background:transparent; color:#b04a3a; }
 button.del:hover { background:#f9e9e6; }
 .addbar { display:flex; gap:8px; margin:16px 0 6px; flex-wrap:wrap; align-items:center; }
 .addbar input, .addbar select { padding:8px 10px; border:1px solid #d8d4c8; border-radius:7px;
   font-size:13px; background:#fff; }
-#f-seq { width:76px; font-family:'SF Mono',Menlo,monospace; }
-#f-desc { flex:1; min-width:130px; }
-#f-param { flex:2; min-width:190px; }
-.addbar .go { background:var(--green); color:#fff; font-weight:600; }
-.addbar .go:hover { background:var(--green2); }
+.addbar .sq { width:76px; font-family:'SF Mono',Menlo,monospace; }
+.addbar .ds { flex:1; min-width:130px; }
+.addbar .pm { flex:2; min-width:190px; }
+.addbar .go { background:var(--accent); color:#fff; font-weight:600; }
+.addbar .go:hover { background:var(--accent2); }
 .addbar .cancel { background:transparent; color:#6b7570; display:none; }
-#err { display:none; color:#b04a3a; font-size:12px; margin:2px 0 6px; font-weight:600; }
-.hint { font-size:11.5px; color:#8a877d; margin-bottom:8px; }
+.err { display:none; color:#b04a3a; font-size:12px; margin:2px 0 6px; font-weight:600; }
 .guide { background:#fff; border:1px solid #e6e3da; border-radius:10px; padding:10px 14px; margin-bottom:12px; }
-.guide summary { font-size:12.5px; font-weight:700; color:var(--green); cursor:pointer; }
+.guide summary { font-size:12.5px; font-weight:700; color:var(--accent); cursor:pointer; }
 .guide .g p { font-size:12px; color:#4a4f4b; margin:9px 0 0; line-height:1.55; }
 .guide code { background:#f2efe7; border-radius:4px; padding:1px 5px; font-family:'SF Mono',Menlo,monospace; font-size:11px; }
 .guide .gnote { color:#8a877d; font-size:11.5px; }
 .toggle { display:flex; align-items:center; justify-content:space-between; gap:14px; background:#fff;
   border:1px solid #e6e3da; border-radius:10px; padding:11px 14px; margin-top:14px; }
 .toggle .sw { display:flex; align-items:center; gap:9px; font-size:13px; font-weight:600; cursor:pointer; }
-.toggle .sw input { width:17px; height:17px; accent-color:var(--green); cursor:pointer; }
+.toggle .sw input { width:17px; height:17px; accent-color:var(--accent); cursor:pointer; }
 .toggle .note { font-size:11.5px; color:#8a877d; margin:3px 0 0 26px; }
-nav.tabs { display:flex; gap:4px; padding:0 24px; background:linear-gradient(180deg,var(--green),#0c5733); }
-nav.tabs button { background:transparent; color:#cfe3d7; font-size:13px; font-weight:600;
+nav.tabs { display:flex; gap:4px; padding:0 24px; background:linear-gradient(180deg,var(--accent),var(--accentDark));
+  transition:background .18s; }
+nav.tabs button { background:transparent; color:rgba(255,255,255,.72); font-size:13px; font-weight:600;
   padding:9px 16px; border-radius:8px 8px 0 0; }
-nav.tabs button.on { background:var(--paper); color:var(--green); }
+nav.tabs button:hover { color:#fff; }
+nav.tabs button.on { background:var(--paper); color:var(--accent); }
 .page { display:none; } .page.on { display:block; }
+.off { display:none; background:#fff6e5; border:1px solid #f0dcae; color:#7a5b12; border-radius:9px;
+  padding:9px 13px; font-size:12.5px; margin-top:14px; }
 .fbwrap { max-width:560px; margin:24px auto 0; background:#fff; border:1px solid #e6e3da;
   border-radius:12px; padding:22px 24px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
 .fbwrap h2 { font-size:17px; margin-bottom:4px; }
@@ -716,22 +920,22 @@ nav.tabs button.on { background:var(--paper); color:var(--green); }
   border-radius:9px; font-size:13px; font-family:inherit; resize:vertical; }
 .fbwrap input.contact { width:100%; padding:10px 12px; margin-top:10px; border:1px solid #d8d4c8;
   border-radius:9px; font-size:13px; }
-.fbwrap .send { background:var(--green); color:#fff; font-weight:700; padding:10px 20px;
+.fbwrap .send { background:var(--accent); color:#fff; font-weight:700; padding:10px 20px;
   font-size:13px; margin-top:14px; }
-.fbwrap .send:hover { background:var(--green2); }
+.fbwrap .send:hover { background:var(--accent2); }
 .fbwrap .privacy { font-size:11.5px; color:#8a877d; margin-top:12px; line-height:1.5; }
 .fbdone { display:none; background:#e9f2ec; border:1px solid #cfe3d7; color:#20603f;
   border-radius:9px; padding:11px 13px; font-size:12.5px; margin-top:14px; }
 .statsbar { display:flex; align-items:center; justify-content:center; gap:22px; margin:18px auto 0;
   max-width:560px; color:#4a4f4b; font-size:13px; }
-.statsbar .big { font-size:26px; font-weight:700; color:var(--green); }
+.statsbar .big { font-size:26px; font-weight:700; color:var(--accent); }
 .statsbar .lbl { font-size:11px; color:#8a877d; text-transform:uppercase; letter-spacing:.7px; }
 .statsbar div { text-align:center; }
 .fblink { text-align:center; margin:22px 0 0; font-size:12.5px; color:#7d8580; }
-.fblink a { color:var(--green); font-weight:600; cursor:pointer; text-decoration:none; }
-#search { flex:1; max-width:360px; padding:9px 12px; border:1px solid #d8d4c8; border-radius:8px;
+.fblink a { color:var(--accent); font-weight:600; cursor:pointer; text-decoration:none; }
+.search { flex:1; max-width:360px; padding:9px 12px; border:1px solid #d8d4c8; border-radius:8px;
   font-size:13px; background:#fbfaf6; }
-#search:focus { outline:2px solid var(--green2); background:#fff; }
+.search:focus { outline:2px solid var(--accent2); background:#fff; }
 #ax { display:none; background:#B04A3A; color:#fff; padding:10px 24px; font-size:13px;
   align-items:center; gap:12px; }
 #ax button { background:#fff; color:#B04A3A; font-weight:700; }
@@ -739,57 +943,14 @@ nav.tabs button.on { background:var(--paper); color:var(--green); }
 <header>
   <img src="CORGI_SRC" alt="">
   <div><h1>⌥XL Shortcut Manager</h1>
-    <p>Tap ⌥ in Excel, then type a sequence. Changes apply instantly.</p></div>
+    <p id="sub">Tap ⌥ in Excel, then type a sequence. Changes apply instantly.</p></div>
 </header>
 <div id="ax">
   <span style="flex:1">Shortcuts are OFF — macOS Accessibility permission is missing.</span>
   <button onclick="send({op:'axsettings'})">Open Accessibility Settings</button>
 </div>
-<nav class="tabs">
-  <button id="tab-sc" class="on" onclick="showPage('sc')">Shortcuts</button>
-  <button id="tab-fb" onclick="showPage('fb')">Feedback</button>
-</nav>
-<main id="page-sc" class="page on">
-  <div class="toggle">
-    <div class="sw-wrap">
-      <label class="sw">
-        <input type="checkbox" id="ovl" onchange="send({op:'overlay', on: this.checked})">
-        <span>Show KeyTips overlay in Excel</span>
-      </label>
-      <div class="note">For experts who know shortcuts by heart.</div>
-    </div>
-    <input id="search" type="search" placeholder="Search shortcuts…" oninput="applyFilter()">
-  </div>
-  <div class="addbar">
-    <input id="f-seq" placeholder="hxx" maxlength="6">
-    <input id="f-desc" placeholder="What it does">
-    <select id="f-kind" onchange="hintParam()">
-      <option value="keystroke">Keystroke</option>
-      <option value="menu">Menu path</option>
-      <option value="applescript">AppleScript</option>
-    </select>
-    <input id="f-param" placeholder="cmd+shift+t">
-    <button class="go" id="f-save" onclick="save()">Add shortcut</button>
-    <button class="cancel" id="f-cancel" onclick="resetForm()">Cancel</button>
-  </div>
-  <p id="err"></p>
-  <details class="guide">
-    <summary>How to create shortcuts — the three methods</summary>
-    <div class="g">
-      <p><b>1 · Keystroke</b> — replays a key combo Excel already understands. Write modifiers + key joined by <code>+</code>: <code>cmd+shift+t</code>, <code>ctrl+cmd+v</code>, <code>cmd+b</code>. Best when Excel has a native Mac shortcut and you just want it behind an ⌥ sequence.</p>
-      <p><b>2 · Menu path</b> — clicks an item in Excel's <i>menu bar at the top of the screen</i> (not the ribbon). Write the path with <code>&gt;</code>: <code>Edit &gt; Clear &gt; All</code>, <code>Format &gt; Column &gt; Width...</code>. Must match your Excel's display language exactly. Best for commands with no keyboard shortcut.</p>
-      <p><b>3 · AppleScript</b> — the most powerful: macOS's automation language, addressing Excel's objects directly. Your text runs inside <code>tell application "Microsoft Excel" … end tell</code>, so write only the action. <code>selection</code> = selected cells; <code>active sheet</code>/<code>active window</code> mean what they say. Examples:<br>
-      <code>set font size of font object of selection to 14</code><br>
-      <code>set row height of entire row of selection to 30</code><br>
-      <code>set zoom of active window to 150</code><br>
-      Explore everything Excel can do: open <b>Script Editor</b> → File → Open Dictionary → Microsoft Excel. Test a line there first, then paste it here.</p>
-      <p class="gnote">Editing a built-in makes it yours; built-ins marked ⚙ keep their smart action (only sequence and name can change).</p>
-    </div>
-  </details>
-  <table><thead><tr><th>Sequence</th><th>Action</th><th>Command</th><th></th><th></th><th></th></tr></thead>
-  <tbody id="rows"></tbody></table>
-  <p class="fblink">Using XL every day? <a onclick="showPage('fb')">Tell me what you think →</a></p>
-</main>
+<nav class="tabs" id="tabs"></nav>
+<div id="pages"></div>
 
 <main id="page-fb" class="page">
   <div class="statsbar" id="statsbar" style="display:none">
@@ -812,105 +973,229 @@ nav.tabs button.on { background:var(--paper); color:var(--green); }
   </div>
 </main>
 <script>
-let editing = null;   // {orig, builtin, luaKind} while editing
-let all = [];         // full catalog from the engine
-let items = [];       // currently displayed (filtered) rows
+const state = {};       // appId -> { all, items, editing }
+let apps = [];          // host records pushed by the engine
+let current = null;     // 'excel' | 'powerpoint' | 'word' | 'fb'
 
 function esc(t) { const d = document.createElement('div'); d.textContent = t == null ? '' : t; return d.innerHTML; }
+function $(id) { return document.getElementById(id); }
+function send(msg) { window.webkit.messageHandlers.xl.postMessage(msg); }
+
+// ---------------------------------------------------------------- guides
+// The three hosts differ enough that one guide would be wrong for two of
+// them: AppleScript vocabularies are unrelated, and PowerPoint's is thin.
+function guideFor(a) {
+  const common =
+    '<p><b>1 · Keystroke</b> — replays a key combo ' + esc(a.label) + ' already understands. ' +
+    'Write modifiers + key joined by <code>+</code>: <code>cmd+shift+t</code>, <code>cmd+alt+1</code>, <code>cmd+b</code>. ' +
+    'Best when there is a native Mac shortcut and you just want it behind an ⌥ sequence.</p>' +
+    '<p><b>2 · Menu path</b> — clicks an item in the <i>menu bar at the top of the screen</i> (not the ribbon). ' +
+    'Write the path with <code>&gt;</code>: <code>Format &gt; Font...</code>. It must match your copy of ' +
+    esc(a.label) + ' in its <b>display language</b> — on a French system you write <code>Format &gt; Police...</code>. ' +
+    'That is why no built-in shortcut uses a menu path.</p>';
+  const scripts = {
+    excel:
+      '<p><b>3 · AppleScript</b> — the most powerful: your text runs inside ' +
+      '<code>tell application "Microsoft Excel" … end tell</code>, so write only the action. ' +
+      '<code>selection</code> = the selected cells.<br>' +
+      '<code>set font size of font object of selection to 14</code><br>' +
+      '<code>set row height of entire row of selection to 30</code><br>' +
+      '<code>set zoom of active window to 150</code></p>',
+    word:
+      '<p><b>3 · AppleScript</b> — your text runs inside ' +
+      '<code>tell application "Microsoft Word" … end tell</code>. ' +
+      '<code>selection</code> = the selected text; formatting hangs off <code>font object</code> ' +
+      'and <code>paragraph format</code>.<br>' +
+      '<code>set bold of font object of selection to true</code><br>' +
+      '<code>set font size of font object of selection to 14</code><br>' +
+      '<code>set color index of font object of selection to red</code></p>',
+    powerpoint:
+      '<p><b>3 · AppleScript</b> — your text runs inside ' +
+      '<code>tell application "Microsoft PowerPoint" … end tell</code>. ' +
+      'PowerPoint\'s dictionary is thinner than Excel\'s and most of it reaches slides through ' +
+      '<code>document window 1</code>, so keystrokes are usually the better tool here.<br>' +
+      '<code>go to slide 3 of document window 1</code><br>' +
+      '<code>set zoom of view of document window 1 to 120</code></p>',
+  };
+  return common + (scripts[a.id] || '') +
+    '<p class="gnote">Editing a built-in makes it yours; built-ins marked ⚙ keep their smart action ' +
+    '(only sequence and name can change). Every host keeps its own separate list.</p>';
+}
+
+// ----------------------------------------------------------------- pages
+function pageHTML(a) {
+  const id = a.id;
+  return '<main id="page-' + id + '" class="page">' +
+    '<div class="toggle">' +
+      '<div class="sw-wrap">' +
+        '<label class="sw"><input type="checkbox" id="en-' + id + '" ' +
+          'onchange="send({op:\'appenabled\', app:\'' + id + '\', on:this.checked})">' +
+          '<span>Enable ⌥ shortcuts in ' + esc(a.label) + '</span></label>' +
+        '<div class="note">When off, ' + esc(a.label) + ' keeps its own ⌥ behaviour untouched.</div>' +
+        '<label class="sw" style="margin-top:9px"><input type="checkbox" id="ovl-' + id + '" ' +
+          'onchange="send({op:\'overlay\', on:this.checked})">' +
+          '<span>Show KeyTips overlay</span></label>' +
+        '<div class="note">For experts who know sequences by heart.</div>' +
+      '</div>' +
+      '<input class="search" id="search-' + id + '" type="search" placeholder="Search shortcuts…" ' +
+        'oninput="applyFilter(\'' + id + '\')">' +
+    '</div>' +
+    '<div class="off" id="off-' + id + '">Shortcuts are switched off for ' + esc(a.label) +
+      ' — the list below is inactive until you re-enable it.</div>' +
+    '<div class="addbar">' +
+      '<input class="sq" id="seq-' + id + '" placeholder="hxx" maxlength="6">' +
+      '<input class="ds" id="desc-' + id + '" placeholder="What it does">' +
+      '<select id="kind-' + id + '" onchange="hintParam(\'' + id + '\')">' +
+        '<option value="keystroke">Keystroke</option>' +
+        '<option value="menu">Menu path</option>' +
+        '<option value="applescript">AppleScript</option>' +
+      '</select>' +
+      '<input class="pm" id="param-' + id + '" placeholder="cmd+shift+t">' +
+      '<button class="go" id="save-' + id + '" onclick="save(\'' + id + '\')">Add shortcut</button>' +
+      '<button class="cancel" id="cancel-' + id + '" onclick="resetForm(\'' + id + '\')">Cancel</button>' +
+    '</div>' +
+    '<p class="err" id="err-' + id + '"></p>' +
+    '<details class="guide"><summary>How to create shortcuts — the three methods</summary>' +
+      '<div class="g">' + guideFor(a) + '</div></details>' +
+    '<table><thead><tr><th>Sequence</th><th>Action</th><th>Command</th><th></th><th></th><th></th></tr></thead>' +
+    '<tbody id="rows-' + id + '"></tbody></table>' +
+    '<p class="fblink">Using XL every day? <a onclick="showPage(\'fb\')">Tell me what you think →</a></p>' +
+  '</main>';
+}
 
 function render(list) {
-  all = list;
-  applyFilter();
+  apps = list;
+  if (!$('tabs').dataset.built) {
+    $('tabs').innerHTML = list.map(a =>
+      '<button id="tab-' + a.id + '" onclick="showPage(\'' + a.id + '\')">' + esc(a.label) + '</button>').join('') +
+      '<button id="tab-fb" onclick="showPage(\'fb\')">Feedback</button>';
+    $('pages').innerHTML = list.map(pageHTML).join('');
+    $('tabs').dataset.built = '1';
+  }
+  list.forEach(a => {
+    if (!state[a.id]) state[a.id] = { all: [], items: [], editing: null };
+    state[a.id].all = a.items || [];
+    const en = $('en-' + a.id);
+    if (en) en.checked = a.enabled !== false;
+    const off = $('off-' + a.id);
+    if (off) off.style.display = a.enabled === false ? 'block' : 'none';
+    applyFilter(a.id);
+  });
+  showPage(current || (list[0] && list[0].id));
 }
 
-function applyFilter() {
-  const q = (document.getElementById('search').value || '').trim().toLowerCase();
-  items = !q ? all : all.filter(it =>
-    (it.seq + ' ' + it.desc + ' ' + (it.cmd || '')).toLowerCase().includes(q));
-  renderRows();
+function applyTheme(a) {
+  if (!a) return;
+  const r = document.documentElement.style;
+  r.setProperty('--accent', a.accent);
+  r.setProperty('--accent2', a.accent2);
+  r.setProperty('--accentDark', a.accentDark);
 }
 
-function renderRows() {
-  const tb = document.getElementById('rows'); tb.innerHTML = '';
-  items.forEach((it, i) => {
+function showPage(which) {
+  if (!which) return;
+  current = which;
+  apps.forEach(a => {
+    const p = $('page-' + a.id), t = $('tab-' + a.id);
+    if (p) p.className = 'page' + (which === a.id ? ' on' : '');
+    if (t) t.className = (which === a.id ? 'on' : '');
+  });
+  $('page-fb').className = 'page' + (which === 'fb' ? ' on' : '');
+  $('tab-fb').className = (which === 'fb' ? 'on' : '');
+  const host = apps.filter(x => x.id === which)[0];
+  applyTheme(host || apps[0]);
+  $('sub').textContent = which === 'fb'
+    ? 'Tell me what works and what is missing.'
+    : 'Tap ⌥ in ' + (host ? host.label : '') + ', then type a sequence. Changes apply instantly.';
+  if (which === 'fb') send({ op: 'loadstats' });
+}
+
+// ------------------------------------------------------------------ rows
+function applyFilter(id) {
+  const st = state[id]; if (!st) return;
+  const box = $('search-' + id);
+  const q = ((box && box.value) || '').trim().toLowerCase();
+  st.items = !q ? st.all : st.all.filter(it =>
+    (it.seq + ' ' + it.desc + ' ' + (it.cmd || '')).toLowerCase().indexOf(q) >= 0);
+  renderRows(id);
+}
+
+function renderRows(id) {
+  const tb = $('rows-' + id); if (!tb) return;
+  tb.innerHTML = '';
+  state[id].items.forEach((it, i) => {
     const tr = document.createElement('tr');
     tr.innerHTML =
       '<td class="seq">' + esc(it.seq.toUpperCase().split('').join(' ')) + '</td>' +
       '<td>' + esc(it.desc) + '</td>' +
       '<td class="cmd" title="' + esc(it.cmd) + '">' + (it.luaKind ? '⚙ ' : '') + esc(it.cmd) + '</td>' +
       '<td><span class="tag' + (it.builtin ? '' : ' custom') + '">' + (it.builtin ? 'built-in' : 'custom') + '</span></td>' +
-      '<td><button class="edit" onclick="beginEdit(' + i + ')">Edit</button></td>' +
-      '<td style="text-align:right"><button class="del" onclick="removeIt(' + i + ')">Remove</button></td>';
+      '<td><button class="edit" onclick="beginEdit(\'' + id + '\',' + i + ')">Edit</button></td>' +
+      '<td style="text-align:right"><button class="del" onclick="removeIt(\'' + id + '\',' + i + ')">Remove</button></td>';
     tb.appendChild(tr);
   });
 }
 
-function hintParam() {
-  const k = document.getElementById('f-kind').value;
-  document.getElementById('f-param').placeholder =
-    k === 'menu' ? 'Edit > Clear > All' : k === 'applescript' ? 'clear contents selection' : 'cmd+shift+t';
+function hintParam(id) {
+  const k = $('kind-' + id).value;
+  $('param-' + id).placeholder =
+    k === 'menu' ? 'Format > Font...' : k === 'applescript' ? 'set bold of font object of selection to true' : 'cmd+shift+t';
 }
 
-function beginEdit(i) {
-  const it = items[i];
-  editing = { orig: it.orig, builtin: it.builtin, luaKind: !!it.luaKind };
-  document.getElementById('f-seq').value = it.seq;
-  document.getElementById('f-desc').value = it.desc;
-  document.getElementById('f-kind').value = it.luaKind ? 'keystroke' : it.kind;
-  document.getElementById('f-param').value = it.param || '';
-  document.getElementById('f-kind').disabled = it.luaKind;
-  document.getElementById('f-param').disabled = it.luaKind;
-  document.getElementById('f-save').textContent = 'Save changes';
-  document.getElementById('f-cancel').style.display = 'inline-block';
-  showErr('');
+function beginEdit(id, i) {
+  const it = state[id].items[i];
+  state[id].editing = { orig: it.orig, builtin: it.builtin, luaKind: !!it.luaKind };
+  $('seq-' + id).value = it.seq;
+  $('desc-' + id).value = it.desc;
+  $('kind-' + id).value = it.luaKind ? 'keystroke' : it.kind;
+  $('param-' + id).value = it.param || '';
+  $('kind-' + id).disabled = it.luaKind;
+  $('param-' + id).disabled = it.luaKind;
+  $('save-' + id).textContent = 'Save changes';
+  $('cancel-' + id).style.display = 'inline-block';
+  showErr(id, '');
 }
 
-function resetForm() {
-  editing = null;
-  ['f-seq','f-desc','f-param'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('f-kind').disabled = false;
-  document.getElementById('f-param').disabled = false;
-  document.getElementById('f-save').textContent = 'Add shortcut';
-  document.getElementById('f-cancel').style.display = 'none';
-  showErr('');
+function resetForm(id) {
+  state[id].editing = null;
+  ['seq-', 'desc-', 'param-'].forEach(p => $(p + id).value = '');
+  $('kind-' + id).disabled = false;
+  $('param-' + id).disabled = false;
+  $('save-' + id).textContent = 'Add shortcut';
+  $('cancel-' + id).style.display = 'none';
+  showErr(id, '');
 }
 
-function showErr(t) {
-  const e = document.getElementById('err');
+function showErr(id, t) {
+  const e = $('err-' + id);
   e.textContent = t; e.style.display = t ? 'block' : 'none';
 }
 
-function save() {
-  const seq = document.getElementById('f-seq').value.trim().toLowerCase();
-  const desc = document.getElementById('f-desc').value.trim();
-  const kind = document.getElementById('f-kind').value;
-  const param = document.getElementById('f-param').value.trim();
-  if (!seq) { showErr('Sequence is required (e.g. hxx).'); return; }
+function save(id) {
+  const seq = $('seq-' + id).value.trim().toLowerCase();
+  const desc = $('desc-' + id).value.trim();
+  const kind = $('kind-' + id).value;
+  const param = $('param-' + id).value.trim();
+  const editing = state[id].editing;
+  if (!seq) { showErr(id, 'Sequence is required (e.g. hxx).'); return; }
   const needsParam = !(editing && editing.luaKind);
-  if (needsParam && !param) { showErr('Command is required: keys like cmd+shift+t, a menu path, or a script.'); return; }
+  if (needsParam && !param) { showErr(id, 'Command is required: keys like cmd+shift+t, a menu path, or a script.'); return; }
   if (editing) {
-    send({ op: 'edit', orig: editing.orig, builtin: editing.builtin, luaKind: editing.luaKind,
+    send({ op: 'edit', app: id, orig: editing.orig, builtin: editing.builtin, luaKind: editing.luaKind,
            seq: seq, desc: desc || 'Custom', kind: kind, param: param });
   } else {
-    send({ op: 'add', seq: seq, desc: desc || 'Custom', kind: kind, param: param });
+    send({ op: 'add', app: id, seq: seq, desc: desc || 'Custom', kind: kind, param: param });
   }
-  resetForm();
+  resetForm(id);
 }
 
-function removeIt(i) {
-  const it = items[i];
-  send({ op: 'delete', seq: it.seq, orig: it.orig, builtin: it.builtin });
+function removeIt(id, i) {
+  const it = state[id].items[i];
+  send({ op: 'delete', app: id, seq: it.seq, orig: it.orig, builtin: it.builtin });
 }
 
+// -------------------------------------------------------------- feedback
 let rating = 0;
-
-function showPage(which) {
-  document.getElementById('page-sc').className = 'page' + (which === 'sc' ? ' on' : '');
-  document.getElementById('page-fb').className = 'page' + (which === 'fb' ? ' on' : '');
-  document.getElementById('tab-sc').className = which === 'sc' ? 'on' : '';
-  document.getElementById('tab-fb').className = which === 'fb' ? 'on' : '';
-  if (which === 'fb') send({ op: 'loadstats' });
-}
 
 document.addEventListener('DOMContentLoaded', function () {
   document.querySelectorAll('#stars span').forEach(function (el) {
@@ -924,30 +1209,31 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 function sendFeedback() {
-  const text = document.getElementById('fb-text').value.trim();
-  const contact = document.getElementById('fb-contact').value.trim();
+  const text = $('fb-text').value.trim();
+  const contact = $('fb-contact').value.trim();
   if (!rating) { alert('Please pick a star rating first.'); return; }
   send({ op: 'feedback', rating: rating, comment: text, contact: contact });
 }
 
 function feedbackDone(ok) {
   if (!ok) return;
-  document.getElementById('fb-done').style.display = 'block';
-  document.getElementById('fb-text').value = '';
+  $('fb-done').style.display = 'block';
+  $('fb-text').value = '';
 }
 
 function setStats(s) {
   if (s.average) {
-    document.getElementById('statsbar').style.display = 'flex';
-    document.getElementById('st-avg').textContent = Number(s.average).toFixed(1) + '★';
-    document.getElementById('st-n').textContent = s.ratings != null ? s.ratings : '–';
-    document.getElementById('st-c').textContent = s.comments != null ? s.comments : '–';
+    $('statsbar').style.display = 'flex';
+    $('st-avg').textContent = Number(s.average).toFixed(1) + '★';
+    $('st-n').textContent = s.ratings != null ? s.ratings : '–';
+    $('st-c').textContent = s.comments != null ? s.comments : '–';
   }
 }
 
-function send(msg) { window.webkit.messageHandlers.xl.postMessage(msg); }
-function setStatus(ok) { document.getElementById('ax').style.display = ok ? 'none' : 'flex'; }
-function setOverlay(on) { document.getElementById('ovl').checked = !!on; }
+function setStatus(ok) { $('ax').style.display = ok ? 'none' : 'flex'; }
+function setOverlay(on) {
+  apps.forEach(a => { const b = $('ovl-' + a.id); if (b) b.checked = !!on; });
+}
 send({ op: 'load' });
 </script></body></html>
 ]==]
@@ -955,26 +1241,50 @@ send({ op: 'load' });
 function pushCatalogRef() end   -- forward declaration (set below)
 local function pushCatalog()
   if not ExcelAlt.manager then return end
-  ExcelAlt.manager:evaluateJavaScript("render(" .. hs.json.encode(catalog) .. ")")
+  local payload = {}
+  for _, a in ipairs(APPS) do
+    payload[#payload + 1] = {
+      id = a.id, label = a.label, noun = a.noun, as = a.as,
+      accent = a.accent, accent2 = a.accent2, accentDark = a.accentDark,
+      enabled = ExcelAlt.appEnabled[a.id] ~= false,
+      items = CATALOG[a.id] or {},
+    }
+  end
+  ExcelAlt.manager:evaluateJavaScript("render(" .. hs.json.encode(payload) .. ")")
   ExcelAlt.manager:evaluateJavaScript("setStatus(" .. tostring(hs.accessibilityState() == true) .. ")")
   ExcelAlt.manager:evaluateJavaScript("setOverlay(" .. tostring(ExcelAlt.overlayOn == true) .. ")")
 end
 pushCatalogRef = pushCatalog
 
+local function savePrefs()
+  writeJSON(PREFS, {
+    enabled = ExcelAlt.enabled,
+    overlayOn = ExcelAlt.overlayOn,
+    appEnabled = ExcelAlt.appEnabled,
+  })
+end
+
 local function saveStore()
+  -- Mirror the Excel slice to the top level so a rollback to v3.1 or
+  -- earlier still finds the user's Excel customs where it expects them.
+  local xlSlice = slice("excel")
+  store.custom, store.disabled, store.renames = xlSlice.custom, xlSlice.disabled, xlSlice.renames
   writeJSON(STORE, store)
   rebuild()
   pushCatalog()
 end
 
--- Manager operations (shared by the webview bridge and the test suite)
-local function opDelete(seq)
+-- Manager operations (shared by the webview bridge and the test suite).
+-- Every one is scoped to a host id; it defaults to Excel so the older
+-- call signature used by earlier tests still means what it used to.
+local function opDelete(seq, appId)
+  local sl = slice(appId or "excel")
   local kept, wasCustom = {}, false
-  for _, c in ipairs(store.custom) do
+  for _, c in ipairs(sl.custom) do
     if c.seq:lower() == seq then wasCustom = true else kept[#kept + 1] = c end
   end
-  store.custom = kept
-  if not wasCustom then store.disabled[seq] = true end
+  sl.custom = kept
+  if not wasCustom then sl.disabled[seq] = true end
   saveStore()
 end
 
@@ -992,35 +1302,37 @@ local function entryFrom(b)
   return entry
 end
 
-local function putCustom(entry, replacingSeq)
+local function putCustom(sl, entry, replacingSeq)
   local kept = {}
-  for _, c in ipairs(store.custom) do
+  for _, c in ipairs(sl.custom) do
     local cs = c.seq:lower()
     if cs ~= entry.seq:lower() and cs ~= (replacingSeq or ""):lower() then
       kept[#kept + 1] = c
     end
   end
   kept[#kept + 1] = entry
-  store.custom = kept
+  sl.custom = kept
 end
 
 local function opAdd(b)
-  store.disabled[b.seq] = nil
-  putCustom(entryFrom(b))
+  local sl = slice(b.app or "excel")
+  sl.disabled[b.seq] = nil
+  putCustom(sl, entryFrom(b))
   saveStore()
 end
 
 local function opEdit(b)
+  local sl = slice(b.app or "excel")
   if b.builtin and b.luaKind then
     -- smart built-ins keep their action; only sequence/name change
-    store.renames[b.orig] = { seq = b.seq, desc = b.desc }
+    sl.renames[b.orig] = { seq = b.seq, desc = b.desc }
   elseif b.builtin then
     -- editing a plain built-in turns it into a custom that shadows it
-    store.disabled[b.orig] = true
-    store.renames[b.orig] = nil
-    putCustom(entryFrom(b))
+    sl.disabled[b.orig] = true
+    sl.renames[b.orig] = nil
+    putCustom(sl, entryFrom(b))
   else
-    putCustom(entryFrom(b), b.orig)
+    putCustom(sl, entryFrom(b), b.orig)
   end
   saveStore()
 end
@@ -1046,17 +1358,24 @@ local function openManager()
       refreshStats()
     elseif b.op == "overlay" then
       ExcelAlt.overlayOn = (b.on == true)
-      writeJSON(PREFS, { enabled = ExcelAlt.enabled, overlayOn = ExcelAlt.overlayOn })
+      savePrefs()
       if not ExcelAlt.overlayOn then pcall(overlayHide) end
+    elseif b.op == "appenabled" then
+      if APP[b.app] then
+        ExcelAlt.appEnabled[b.app] = (b.on == true)
+        savePrefs()
+        updateTaps()
+      end
     elseif b.op == "axsettings" then
       hs.execute("open 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'")
     elseif b.op == "delete" then
       if b.builtin and b.orig then
-        store.disabled[b.orig] = true
-        store.renames[b.orig] = nil
+        local sl = slice(b.app or "excel")
+        sl.disabled[b.orig] = true
+        sl.renames[b.orig] = nil
         saveStore()
       else
-        opDelete(b.seq)
+        opDelete(b.seq, b.app)
       end
     elseif b.op == "edit" then opEdit(b)
     elseif b.op == "add" then opAdd(b) end
@@ -1096,17 +1415,29 @@ end
 -- ---------------------------------------------------------------------
 local function menubarMenu()
   local accessOK = hs.accessibilityState()
+  local hostItems = {}
+  for _, a in ipairs(APPS) do
+    hostItems[#hostItems + 1] = {
+      title = (ExcelAlt.appEnabled[a.id] ~= false and "✓ " or "    ") .. a.label,
+      fn = function()
+        ExcelAlt.appEnabled[a.id] = (ExcelAlt.appEnabled[a.id] == false)
+        savePrefs()
+        updateTaps()
+        pcall(pushCatalogRef)
+      end }
+  end
   return {
     { title = ExcelAlt.enabled and "✓ Shortcuts enabled" or "Shortcuts paused",
       fn = function()
         ExcelAlt.enabled = not ExcelAlt.enabled
-        writeJSON(PREFS, { enabled = ExcelAlt.enabled, overlayOn = ExcelAlt.overlayOn })
+        savePrefs()
         updateTaps()
       end },
+    { title = "Active in…", menu = hostItems },
     { title = ExcelAlt.overlayOn and "✓ Show KeyTips overlay" or "KeyTips overlay hidden",
       fn = function()
         ExcelAlt.overlayOn = not ExcelAlt.overlayOn
-        writeJSON(PREFS, { enabled = ExcelAlt.enabled, overlayOn = ExcelAlt.overlayOn })
+        savePrefs()
         if not ExcelAlt.overlayOn then overlayHide() end
         pcall(pushCatalogRef)
       end },
@@ -1157,7 +1488,7 @@ local function setupMenubar()
   -- invisible, so presence/absence of "⌥XL" in the menu bar is a
   -- definitive diagnostic (icon-only could hide via rendering issues).
   ExcelAlt.bar:setTitle("⌥XL")
-  ExcelAlt.bar:setTooltip(APPNAME .. " — Alt shortcuts for Excel")
+  ExcelAlt.bar:setTooltip(APPNAME .. " — Alt shortcuts for Excel, PowerPoint & Word")
   ExcelAlt.bar:setMenu(menubarMenu)
   dlog("menubar: item created; icon=" .. tostring(ExcelAlt.barIcon ~= nil))
   -- Half a second later, record what macOS actually DID with the item:
@@ -1194,6 +1525,11 @@ local prefs = readJSON(PREFS)
 if prefs then
   if prefs.enabled == false then ExcelAlt.enabled = false end
   if prefs.overlayOn == false then ExcelAlt.overlayOn = false end
+  if type(prefs.appEnabled) == "table" then
+    for _, a in ipairs(APPS) do
+      if prefs.appEnabled[a.id] == false then ExcelAlt.appEnabled[a.id] = false end
+    end
+  end
 end
 
 ExcelAlt.flagsTap = hs.eventtap.new({ hs.eventtap.event.types.flagsChanged }, safely(handleFlags))
@@ -1202,7 +1538,9 @@ ExcelAlt.keyTap   = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, safely(
 -- One-time frontmost check at startup (allowed here: not inside a tap)
 do
   local f = hs.application.frontmostApplication()
-  ExcelAlt.excelFront = f ~= nil and f:bundleID() == EXCEL
+  local bid = f ~= nil and f:bundleID() or nil
+  ExcelAlt.activeApp = bid and BY_BUNDLE[bid:lower()] or nil
+  ExcelAlt.excelFront = (ExcelAlt.activeApp == "excel")
 end
 
 ExcelAlt.watcher = hs.application.watcher.new(onAppEvent)
@@ -1302,7 +1640,7 @@ local function grantReady()
   hs.timer.doAfter(1, hideEngineWindows)
   pcall(pushCatalog)
   hs.timer.doAfter(1, setupMenubar)
-  hs.alert.show(APPNAME .. " ready — tap ⌥ in Excel", 1.5)
+  hs.alert.show(APPNAME .. " ready — tap ⌥ in Excel, PowerPoint or Word", 1.5)
 end
 
 -- Live trust tracking: grant activates taps in place (no restart); revoke
@@ -1355,8 +1693,14 @@ ExcelAlt._test = {
   opAdd        = opAdd,
   opEdit       = opEdit,
   opDelete     = opDelete,
+  savePrefs    = savePrefs,
+  apps         = APPS,
+  byBundle     = BY_BUNDLE,
+  builtins     = BUILTINS,
   store        = function() return store end,
-  exact        = function() return exact end,
-  prefixes     = function() return prefixes end,
-  catalog      = function() return catalog end,
+  -- Host-scoped views; default to Excel so pre-multi-app assertions still
+  -- read the set they were written against.
+  exact        = function(appId) return EXACT[appId or "excel"] end,
+  prefixes     = function(appId) return PREFIX[appId or "excel"] end,
+  catalog      = function(appId) return CATALOG[appId or "excel"] end,
 }

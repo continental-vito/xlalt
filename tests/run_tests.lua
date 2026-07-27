@@ -298,10 +298,163 @@ do
 end
 
 -- =====================================================================
+print("\n[8] Multi-host: PowerPoint and Word")
+-- =====================================================================
+mock.activate(mock.PPT)
+check("activating PowerPoint enables the taps",
+  flagsTap:isEnabled() and keyTap:isEnabled() and ExcelAlt.activeApp == "powerpoint",
+  ExcelAlt.activeApp)
+
+mock.activate(mock.WORD)
+check("activating Word switches the active host",
+  keyTap:isEnabled() and ExcelAlt.activeApp == "word", ExcelAlt.activeApp)
+
+mock.activate("com.apple.Safari")
+check("an unsupported app clears the active host and stops taps",
+  ExcelAlt.activeApp == nil and not keyTap:isEnabled())
+
+-- PowerPoint sequences fire against PowerPoint
+mock.activate(mock.PPT)
+tapOption()
+local rp = typeKeys("hi")
+mock.flushTimers()
+ks = mock.log.keystrokes[#mock.log.keystrokes]
+check("PPT H I sends New Slide to PowerPoint, not Excel",
+  rp[2] == true and ks and ks.key == "n" and ks.bundle == mock.PPT,
+  ks and (ks.key .. "@" .. tostring(ks.bundle)))
+
+tapOption()
+typeKeys("sb")
+mock.flushTimers()
+ks = mock.log.keystrokes[#mock.log.keystrokes]
+check("PPT S B plays from the beginning (cmd+shift+return)",
+  ks and ks.key == "return" and ks.mods[1] == "cmd" and ks.mods[2] == "shift")
+
+-- Word sequences fire against Word, and AppleScript targets Word
+mock.activate(mock.WORD)
+mock.log.osascript = {}
+tapOption()
+typeKeys("hfg")
+mock.flushTimers()
+check("Word H F G grows the font via a Word-targeted AppleScript",
+  lastScript():find('tell application "Microsoft Word"') ~= nil and
+  lastScript():find("font size of font object of selection") ~= nil, lastScript())
+
+tapOption()
+typeKeys("hs2")
+mock.flushTimers()
+ks = mock.log.keystrokes[#mock.log.keystrokes]
+check("Word H S 2 applies Heading 2 to Word",
+  ks and ks.key == "2" and ks.bundle == mock.WORD, ks and tostring(ks.bundle))
+
+-- Sets are isolated: an Excel-only sequence must not resolve in Word
+do
+  local nAlerts = #mock.log.alerts
+  tapOption()
+  typeKeys("wvg")            -- Excel: toggle gridlines. Word: nothing.
+  mock.flushTimers()
+  check("an Excel-only sequence does not resolve in Word",
+    (mock.log.alerts[#mock.log.alerts] or ""):find("No shortcut") ~= nil and
+    #mock.log.alerts > nAlerts)
+end
+
+check("each host builds its own lookup tables",
+  T.exact("excel")["hvv"] ~= nil and T.exact("word")["hvv"] ~= nil and
+  T.exact("powerpoint")["hvv"] == nil)
+
+check("the same sequence can mean different things per host",
+  T.exact("excel")["h1"].desc == "Bold" and T.exact("word")["hs1"].desc == "Heading 1")
+
+-- Per-host customs live in their own slice
+T.opAdd({ app = "word", seq = "hzz", desc = "Word only", kind = "keystroke", param = "cmd+shift+w" })
+check("a Word custom appears in Word and nowhere else",
+  T.exact("word")["hzz"] ~= nil and T.exact("excel")["hzz"] == nil and
+  T.exact("powerpoint")["hzz"] == nil)
+
+do
+  local st = T.store()
+  check("store keeps one slice per host under apps",
+    st.apps ~= nil and st.apps.word ~= nil and st.apps.powerpoint ~= nil and
+    #st.apps.word.custom == 1 and #st.apps.powerpoint.custom == 0)
+  check("Excel slice is mirrored to the top level for older builds",
+    st.custom ~= nil and st.custom == st.apps.excel.custom)
+end
+
+T.opDelete("hzz", "word")
+check("deleting a Word custom leaves the other hosts untouched",
+  T.exact("word")["hzz"] == nil and T.exact("excel")["hvv"] ~= nil)
+
+-- Per-host enable switch
+ExcelAlt.appEnabled.word = false
+T.updateTaps()
+check("switching a host off stops the taps while that host is frontmost",
+  not keyTap:isEnabled())
+mock.activate(mock.PPT)
+check("other hosts keep working when one is switched off", keyTap:isEnabled())
+ExcelAlt.appEnabled.word = true
+
+check("PowerPoint bundle id is matched case-insensitively",
+  T.byBundle["com.microsoft.powerpoint"] == "powerpoint" and
+  T.byBundle["com.microsoft.word"] == "word")
+
+-- Built-in hygiene: menu paths would break on a non-English macOS, and a
+-- duplicate sequence inside one host would shadow the earlier entry.
+for _, a in ipairs(T.apps) do
+  local seen, dupe, menus = {}, nil, 0
+  for _, b in ipairs(T.builtins[a.id] or {}) do
+    if seen[b.seq] then dupe = b.seq end
+    seen[b.seq] = true
+    if b.kind == "menu" then menus = menus + 1 end
+  end
+  check(a.label .. ": no duplicate built-in sequences", dupe == nil, dupe)
+  if a.id ~= "excel" then
+    check(a.label .. ": no menu-path built-ins (localisation safe)", menus == 0, menus)
+  end
+end
+
+-- =====================================================================
 print("\n[7] Deferred-UI invariant (guards the v12 fix)")
 -- =====================================================================
 check("zero canvas/alert/screen calls ever executed inside a tap callback",
   mock.uiViolations == 0, mock.uiViolations)
+
+-- =====================================================================
+print("\n[9] Migration from the v1 (Excel-only) shortcuts.json")
+-- =====================================================================
+-- Reload the engine against a fresh HOME containing a v1 store, and prove
+-- the user's existing Excel customs survive the schema change.
+do
+  local tmp2 = os.tmpname() ; os.remove(tmp2)
+  os.execute("mkdir -p '" .. tmp2 .. "/Library/Application Support/ExcelAlt'")
+  local f = io.open(tmp2 .. "/Library/Application Support/ExcelAlt/shortcuts.json", "w")
+  f:write('{"custom":[{"seq":"hqq","desc":"Legacy macro","kind":"keystroke",' ..
+          '"mods":"cmd","key":"9"}],"disabled":{"hba":true},' ..
+          '"renames":{"h0":{"seq":"hdd","desc":"More decimals"}}}')
+  f:close()
+  os.getenv = function(k) if k == "HOME" then return tmp2 end return origGetenv(k) end
+
+  dofile("src/init.lua")
+  local T2 = ExcelAlt._test
+  local st = T2.store()
+  check("v1 custom shortcut survives the migration",
+    T2.exact("excel")["hqq"] ~= nil and st.apps.excel.custom[1].seq == "hqq")
+  check("v1 disabled built-in is still disabled",
+    st.apps.excel.disabled["hba"] == true and T2.exact("excel")["hba"] == nil)
+  check("v1 rename still applies",
+    T2.exact("excel")["hdd"] ~= nil and T2.exact("excel")["h0"] == nil)
+  check("migrated file gains empty slices for the new hosts",
+    st.apps.word ~= nil and st.apps.powerpoint ~= nil and
+    #st.apps.word.custom == 0)
+  check("version stamp records the new schema", st.version == 2)
+
+  -- writing it back must keep the legacy keys an older build reads
+  T2.opAdd({ app = "excel", seq = "hyy", desc = "New", kind = "keystroke", param = "cmd+y" })
+  local raw = io.open(tmp2 .. "/Library/Application Support/ExcelAlt/shortcuts.json"):read("*a")
+  local back = mock.hs.json.decode(raw)
+  check("saved file carries both the v2 slices and the v1 top level",
+    back.apps ~= nil and back.apps.excel ~= nil and back.custom ~= nil and
+    #back.custom == #back.apps.excel.custom, raw:sub(1, 60))
+end
 
 -- =====================================================================
 print(string.format("\n%d passed, %d failed\n", passed, failed))

@@ -212,7 +212,11 @@ hs.eventtap = {
     return tap
   end,
   keyStroke = function(mods, key, delay, app)
-    M.log.keystrokes[#M.log.keystrokes + 1] = { mods = mods, key = key }
+    -- the target app is recorded so tests can prove a shortcut was sent to
+    -- the host it belongs to, not merely that some keystroke happened
+    local bundle = nil
+    if type(app) == "table" and app.bundleID then bundle = app.bundleID() end
+    M.log.keystrokes[#M.log.keystrokes + 1] = { mods = mods, key = key, bundle = bundle }
   end,
 }
 
@@ -318,5 +322,10 @@ function M.activate(bundle)
   M.frontBundle = bundle
   M.watcherFn("App", "activated", makeApp(bundle))
 end
+
+-- Bundle ids of the three supported hosts, for readability in tests
+M.EXCEL = "com.microsoft.Excel"
+M.PPT   = "com.microsoft.Powerpoint"
+M.WORD  = "com.microsoft.Word"
 
 return M

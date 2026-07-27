@@ -13,3 +13,19 @@ jobs:
         run: luac5.4 -p src/init.lua tests/hs_mock.lua tests/run_tests.lua
       - name: Run test suite
         run: lua5.4 tests/run_tests.lua
+
+  # The Shortcut Manager is ~400 lines of JS embedded in init.lua, driving
+  # three per-host pages. jsdom loads that exact markup and exercises the
+  # tabs, theming, forms, and the messages the engine would receive, which
+  # the Lua suite cannot see.
+  manager-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install jsdom
+        run: npm ci --prefix tests/ui || npm install --prefix tests/ui
+      - name: Run manager UI checks
+        run: node tests/ui/check.js

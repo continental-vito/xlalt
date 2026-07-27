@@ -30,7 +30,7 @@ jobs:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           gh release create "$TAG" --title "⌥XL $TAG" \
-            --notes "Download XL.dmg below → drag ExcelAlt to Applications → open (first time: System Settings → Privacy & Security → Open Anyway) → grant Accessibility → tap ⌥ in Excel." \
+            --notes "Download XL.dmg below → drag ExcelAlt to Applications → open (first time: System Settings → Privacy & Security → Open Anyway) → grant Accessibility → tap ⌥ in Excel, PowerPoint or Word." \
             2>/dev/null || true
           gh release upload "$TAG" dist/XL.dmg dist/XL-App.zip dist/ExcelAlt-update.zip --clobber
       - name: Publish appcast for in-app updates
