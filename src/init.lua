@@ -30,7 +30,9 @@
 ExcelAlt = {
   version    = "dev",   -- replaced at startup by the bundle's real version
   enabled    = true,
-  overlayOn  = true,   -- KeyTips panel; expert users can switch it off
+  -- KeyTips panel, per host: an expert on Excel's sequences may still be
+  -- learning Word's, so this is not one switch for all three.
+  overlayOn  = { excel = true, powerpoint = true, word = true },
   mode       = false,
   seq        = "",
   activeApp  = nil,    -- "excel"|"powerpoint"|"word"|nil — cached by the app
@@ -70,6 +72,31 @@ local APPS = {
     as = "Microsoft Word", noun = "text",
     accent = "#185ABD", accent2 = "#2B7CD3", accentDark = "#12489A", tint = "#8FC0FF" },
 }
+-- ---------------------------------------------------------------------
+-- Tutorial videos shown on the "How to use" tab.
+--
+-- TO ADD A VIDEO: record it, drag the file into a comment box on any
+-- GitHub issue in this repo, wait for the upload to finish, copy the
+-- resulting https://github.com/user-attachments/... URL and paste it into
+-- `url` below. An entry with an empty url renders a "coming soon" tile,
+-- so the layout is right before the recordings exist. Order here is the
+-- order on the page.
+-- ---------------------------------------------------------------------
+local TUTORIAL = {
+  { title = "Getting started",
+    caption = "Installing ⌥XL, granting Accessibility, and your first sequence.",
+    url = "" },
+  { title = "Sequences in Excel",
+    caption = "Tap ⌥, watch the KeyTips panel, and run the built-in Excel shortcuts.",
+    url = "" },
+  { title = "PowerPoint and Word",
+    caption = "The same key sequences across all three apps, and switching between them.",
+    url = "" },
+  { title = "Making your own shortcuts",
+    caption = "Adding, editing and removing shortcuts in the Shortcut Manager.",
+    url = "" },
+}
+
 local APP = {}          -- id -> app record
 local BY_BUNDLE = {}    -- lowercased bundle id -> app id
 for _, a in ipairs(APPS) do
@@ -661,10 +688,10 @@ end
 
 local function overlayShow()
   overlayHide()
-  if not ExcelAlt.overlayOn then return end
   local appId = ExcelAlt.activeApp
   local host = APP[appId]
   if not host then return end
+  if ExcelAlt.overlayOn[appId] == false then return end
   local hints = {}
   for _, item in ipairs(CATALOG[appId] or {}) do
     if item.seq:sub(1, #ExcelAlt.seq) == ExcelAlt.seq then
@@ -796,7 +823,7 @@ local function handleKey(e)
   if hit then
     local fired = ExcelAlt.seq
     exitMode()
-    if ExcelAlt.overlayOn then say(hit.desc, 0.8) end   -- expert mode: silent success
+    if ExcelAlt.overlayOn[appId] ~= false then say(hit.desc, 0.8) end  -- expert mode: silent
     -- Keystroke actions cannot report failure the way AppleScript can, so
     -- the log records every sequence that resolved. A shortcut that "does
     -- nothing" is then two distinguishable cases: no line at all (the
@@ -958,9 +985,39 @@ nav.tabs button.on { background:var(--paper); color:var(--accent); }
 .statsbar div { text-align:center; }
 .fblink { text-align:center; margin:22px 0 0; font-size:12.5px; color:#7d8580; }
 .fblink a { color:var(--accent); font-weight:600; cursor:pointer; text-decoration:none; }
+.hint { font-size:12px; color:#8a877d; margin:2px 0 12px; }
+.hint a { color:var(--accent); font-weight:600; cursor:pointer; text-decoration:none; }
 .search { flex:1; max-width:360px; padding:9px 12px; border:1px solid #d8d4c8; border-radius:8px;
   font-size:13px; background:#fbfaf6; }
 .search:focus { outline:2px solid var(--accent2); background:#fff; }
+.doc { max-width:760px; margin:0 auto; }
+.doc h2 { font-size:17px; margin:26px 0 8px; color:var(--accent); }
+.doc h2:first-child { margin-top:6px; }
+.doc p { font-size:13px; line-height:1.65; color:#3f4642; margin:8px 0; }
+.doc ul { margin:8px 0 8px 20px; }
+.doc li { font-size:13px; line-height:1.6; color:#3f4642; margin:5px 0; }
+.card { background:#fff; border:1px solid #e6e3da; border-radius:11px;
+  padding:16px 20px; margin:12px 0; box-shadow:0 1px 3px rgba(0,0,0,.05); }
+.card h3 { font-size:14px; margin-bottom:2px; }
+.card .lead { font-size:12.5px; color:#6b7570; margin:0 0 10px; }
+.card .num { display:inline-flex; align-items:center; justify-content:center;
+  width:22px; height:22px; border-radius:50%; background:var(--accent); color:#fff;
+  font-size:12px; font-weight:700; margin-right:8px; }
+.ex { background:#f4f2ec; border-radius:7px; padding:9px 12px; margin:7px 0;
+  font-family:'SF Mono',Menlo,monospace; font-size:11.5px; color:#3f4642;
+  white-space:pre-wrap; word-break:break-word; }
+.ex b { display:block; font-family:-apple-system,sans-serif; font-size:11px;
+  font-weight:700; color:#8a877d; text-transform:uppercase; letter-spacing:.6px;
+  margin-bottom:4px; }
+.warn { border-left:3px solid #C9A227; background:#fdf9ec; border-radius:0 7px 7px 0;
+  padding:10px 14px; margin:10px 0; font-size:12.5px; color:#6b5a1e; line-height:1.55; }
+.vid { margin:14px 0; }
+.vid video { width:100%; border-radius:10px; background:#000; display:block; }
+.vid .soon { width:100%; aspect-ratio:16/9; border-radius:10px; background:#eceae3;
+  border:1px dashed #cfcabc; display:flex; align-items:center; justify-content:center;
+  color:#8a877d; font-size:12.5px; }
+.vid h3 { font-size:14px; margin:0 0 3px; }
+.vid p { font-size:12.5px; color:#6b7570; margin:0 0 8px; }
 #ax { display:none; background:#B04A3A; color:#fff; padding:10px 24px; font-size:13px;
   align-items:center; gap:12px; }
 #ax button { background:#fff; color:#B04A3A; font-weight:700; }
@@ -976,6 +1033,8 @@ nav.tabs button.on { background:var(--paper); color:var(--accent); }
 </div>
 <nav class="tabs" id="tabs"></nav>
 <div id="pages"></div>
+
+<main id="page-help" class="page"><div class="doc" id="help-body"></div></main>
 
 <main id="page-fb" class="page">
   <div class="statsbar" id="statsbar" style="display:none">
@@ -1006,46 +1065,126 @@ function esc(t) { const d = document.createElement('div'); d.textContent = t == 
 function $(id) { return document.getElementById(id); }
 function send(msg) { window.webkit.messageHandlers.xl.postMessage(msg); }
 
-// ---------------------------------------------------------------- guides
-// The three hosts differ enough that one guide would be wrong for two of
-// them: AppleScript vocabularies are unrelated, and PowerPoint's is thin.
-function guideFor(a) {
-  const common =
-    '<p><b>1 · Keystroke</b> — replays a key combo ' + esc(a.label) + ' already understands. ' +
-    'Write modifiers + key joined by <code>+</code>: <code>cmd+shift+t</code>, <code>cmd+alt+1</code>, <code>cmd+b</code>. ' +
-    'Best when there is a native Mac shortcut and you just want it behind an ⌥ sequence.</p>' +
-    '<p><b>2 · Menu path</b> — clicks an item in the <i>menu bar at the top of the screen</i> (not the ribbon). ' +
-    'Write the path with <code>&gt;</code>: <code>Format &gt; Font...</code>. It must match your copy of ' +
-    esc(a.label) + ' in its <b>display language</b> — on a French system the same item is ' +
-    '<code>Format &gt; Police...</code>. Built-in shortcuts avoid menu paths for that reason, ' +
-    'but your own can use them freely: you know what language your Office is in.</p>';
-  const scripts = {
-    excel:
-      '<p><b>3 · AppleScript</b> — the most powerful: your text runs inside ' +
-      '<code>tell application "Microsoft Excel" … end tell</code>, so write only the action. ' +
-      '<code>selection</code> = the selected cells.<br>' +
-      '<code>set font size of font object of selection to 14</code><br>' +
-      '<code>set row height of entire row of selection to 30</code><br>' +
-      '<code>set zoom of active window to 150</code></p>',
-    word:
-      '<p><b>3 · AppleScript</b> — your text runs inside ' +
-      '<code>tell application "Microsoft Word" … end tell</code>. ' +
-      '<code>selection</code> = the selected text; formatting hangs off <code>font object</code> ' +
-      'and <code>paragraph format</code>.<br>' +
-      '<code>set bold of font object of selection to true</code><br>' +
-      '<code>set font size of font object of selection to 14</code><br>' +
-      '<code>set color index of font object of selection to red</code></p>',
-    powerpoint:
-      '<p><b>3 · AppleScript</b> — your text runs inside ' +
-      '<code>tell application "Microsoft PowerPoint" … end tell</code>. ' +
-      'PowerPoint\'s dictionary is thinner than Excel\'s and most of it reaches slides through ' +
-      '<code>document window 1</code>, so keystrokes are usually the better tool here.<br>' +
-      '<code>go to slide 3 of document window 1</code><br>' +
-      '<code>set zoom of view of document window 1 to 120</code></p>',
-  };
-  return common + (scripts[a.id] || '') +
-    '<p class="gnote">Editing a built-in makes it yours; built-ins marked ⚙ keep their smart action ' +
-    '(only sequence and name can change). Every host keeps its own separate list.</p>';
+// ------------------------------------------------------------ how to use
+// The full guide lives on its own tab rather than being folded away on
+// each host page: it is the same three methods everywhere, and the
+// AppleScript vocabularies are worth seeing side by side.
+let tutorial = [];
+function setTutorial(list) { tutorial = list || []; renderHelp(); }
+
+const SCRIPT_EXAMPLES = {
+  excel: [
+    'set font size of font object of selection to 14',
+    'set row height of entire row of selection to 30',
+    'set zoom of active window to 150',
+  ],
+  word: [
+    'set bold of font object of selection to true',
+    'set font size of font object of selection to 14',
+    'set color index of font object of selection to red',
+  ],
+  powerpoint: [
+    'go to slide 3 of document window 1',
+    'set zoom of view of document window 1 to 120',
+  ],
+};
+
+function videoHTML(v) {
+  const body = v.url
+    ? '<video controls preload="metadata" src="' + esc(v.url) + '"></video>'
+    : '<div class="soon">Video coming soon</div>';
+  return '<div class="vid"><h3>' + esc(v.title) + '</h3>' +
+         '<p>' + esc(v.caption) + '</p>' + body + '</div>';
+}
+
+function renderHelp() {
+  const el = $('help-body');
+  if (!el) return;
+  const labels = { excel: 'Excel', powerpoint: 'PowerPoint', word: 'Word' };
+  const scriptCards = Object.keys(SCRIPT_EXAMPLES).map(k =>
+    '<div class="ex"><b>' + labels[k] + '</b>' +
+    SCRIPT_EXAMPLES[k].map(esc).join('\n') + '</div>').join('');
+
+  el.innerHTML =
+    '<h2>The basics</h2>' +
+    '<p>Open Excel, PowerPoint or Word and tap the <b>⌥ Option</b> key once — do not hold it. ' +
+    'The KeyTips panel appears and lists what you can type next. Type the sequence you know ' +
+    'from Windows and the action runs.</p>' +
+    '<ul>' +
+      '<li>The panel filters as you type, and always names the app it is driving — the same ' +
+        'letters mean different things in Excel and Word.</li>' +
+      '<li><b>Esc</b> leaves sequence mode. So does tapping ⌥ again, or waiting four seconds.</li>' +
+      '<li>Each app has its own list, its own colour, and its own switches. Turning something ' +
+        'off in Excel leaves PowerPoint and Word exactly as they were.</li>' +
+    '</ul>' +
+
+    (tutorial.length ? '<h2>Watch</h2>' + tutorial.map(videoHTML).join('') : '') +
+
+    '<h2>How to create shortcuts — the three methods</h2>' +
+    '<p>Every shortcut, built-in or your own, is one of three kinds. Pick the kind from the ' +
+    'dropdown on any app tab, then fill in the command box. Whichever tab you are on is the ' +
+    'app the shortcut belongs to.</p>' +
+
+    '<div class="card">' +
+      '<h3><span class="num">1</span>Keystroke</h3>' +
+      '<p class="lead">Replays a key combination the app already understands.</p>' +
+      '<p>Write the modifiers and the key joined by <code>+</code>. Valid modifiers are ' +
+      '<code>cmd</code>, <code>shift</code>, <code>alt</code> (Option) and <code>ctrl</code>.</p>' +
+      '<div class="ex"><b>Examples</b>cmd+b\ncmd+shift+t\ncmd+alt+1\ncmd+return</div>' +
+      '<p>This is the best choice whenever the app already has a Mac shortcut and you simply ' +
+      'want it behind a sequence you can remember. It also works in any language, because it ' +
+      'never touches menu text.</p>' +
+    '</div>' +
+
+    '<div class="card">' +
+      '<h3><span class="num">2</span>Menu path</h3>' +
+      '<p class="lead">Clicks an item in the menu bar at the top of the screen.</p>' +
+      '<p>This is the macOS menu bar — File, Edit, Format, View — not the ribbon inside the ' +
+      'window. Write the path from the top, separated by <code>&gt;</code>, and include any ' +
+      'trailing dots exactly as they appear.</p>' +
+      '<div class="ex"><b>Examples</b>Format &gt; Font...\nEdit &gt; Clear &gt; All\nView &gt; Ruler</div>' +
+      '<div class="warn"><b>Menu paths are language-specific.</b> They have to match your copy ' +
+      'of Office in the language it displays. If your Office is in French, the first example ' +
+      'is <code>Format &gt; Police...</code>. This is why almost no built-in shortcut uses a ' +
+      'menu path — the app ships to people running Office in many languages — but your own ' +
+      'shortcuts can use them freely, since you know what language yours is in.</div>' +
+    '</div>' +
+
+    '<div class="card">' +
+      '<h3><span class="num">3</span>AppleScript</h3>' +
+      '<p class="lead">The most powerful: anything the app can be automated to do.</p>' +
+      '<p>Write only the action. It is wrapped for you in ' +
+      '<code>tell application "…" … end tell</code> for whichever app the tab belongs to, so ' +
+      'you never write the tell block yourself. In Excel <code>selection</code> means the ' +
+      'selected cells; in Word it means the selected text, with formatting on ' +
+      '<code>font object</code>. PowerPoint\'s vocabulary is thinner and mostly reaches ' +
+      'slides through <code>document window 1</code>, so keystrokes are usually the better ' +
+      'tool there.</p>' +
+      scriptCards +
+      '<p>If an AppleScript shortcut does nothing, it is recorded as a failure in the log at ' +
+      '<code>~/Library/Application Support/ExcelAlt/debug.log</code>, with the line that ' +
+      'failed — useful if you report it.</p>' +
+    '</div>' +
+
+    '<h2>Editing what is already there</h2>' +
+    '<ul>' +
+      '<li><b>Edit</b> loads a shortcut into the form at the top of that app\'s tab. Change the ' +
+        'sequence, the name, or the command, then Save changes.</li>' +
+      '<li>Built-ins marked <b>⚙</b> have smart actions that cannot be rewritten — you can ' +
+        'still change their sequence and name.</li>' +
+      '<li>Editing any other built-in turns it into your own copy, which replaces it.</li>' +
+      '<li><b>Remove</b> takes a built-in out of the list. Nothing is lost permanently: ' +
+        'adding the same sequence back restores it.</li>' +
+    '</ul>' +
+
+    '<h2>When a shortcut does nothing</h2>' +
+    '<ul>' +
+      '<li>Check the KeyTips panel appears at all when you tap ⌥. If not, the app may be ' +
+        'switched off on its own tab, or Accessibility permission is missing.</li>' +
+      '<li>Check you are on the right tab: a sequence that exists in Excel may not exist in Word.</li>' +
+      '<li>If the panel shows the sequence but nothing happens, the command behind it is wrong. ' +
+        'Edit it, or report it and include the log file named above.</li>' +
+    '</ul>';
 }
 
 // ----------------------------------------------------------------- pages
@@ -1059,9 +1198,10 @@ function pageHTML(a) {
           '<span>Enable ⌥ shortcuts in ' + esc(a.label) + '</span></label>' +
         '<div class="note">When off, ' + esc(a.label) + ' keeps its own ⌥ behaviour untouched.</div>' +
         '<label class="sw" style="margin-top:9px"><input type="checkbox" id="ovl-' + id + '" ' +
-          'onchange="send({op:\'overlay\', on:this.checked})">' +
-          '<span>Show KeyTips overlay</span></label>' +
-        '<div class="note">For experts who know sequences by heart.</div>' +
+          'onchange="send({op:\'overlay\', app:\'' + id + '\', on:this.checked})">' +
+          '<span>Show KeyTips overlay in ' + esc(a.label) + '</span></label>' +
+        '<div class="note">Switch off once you know these sequences by heart; ' +
+          'the other apps keep theirs.</div>' +
       '</div>' +
       '<input class="search" id="search-' + id + '" type="search" placeholder="Search shortcuts…" ' +
         'oninput="applyFilter(\'' + id + '\')">' +
@@ -1081,8 +1221,8 @@ function pageHTML(a) {
       '<button class="cancel" id="cancel-' + id + '" onclick="resetForm(\'' + id + '\')">Cancel</button>' +
     '</div>' +
     '<p class="err" id="err-' + id + '"></p>' +
-    '<details class="guide"><summary>How to create shortcuts — the three methods</summary>' +
-      '<div class="g">' + guideFor(a) + '</div></details>' +
+    '<p class="hint">Three ways to bind a sequence — keystroke, menu path or AppleScript. ' +
+      '<a onclick="showPage(\'help\')">See How to use →</a></p>' +
     '<table><thead><tr><th>Sequence</th><th>Action</th><th>Command</th><th></th><th></th><th></th></tr></thead>' +
     '<tbody id="rows-' + id + '"></tbody></table>' +
     '<p class="fblink">Using XL every day? <a onclick="showPage(\'fb\')">Tell me what you think →</a></p>' +
@@ -1094,15 +1234,19 @@ function render(list) {
   if (!$('tabs').dataset.built) {
     $('tabs').innerHTML = list.map(a =>
       '<button id="tab-' + a.id + '" onclick="showPage(\'' + a.id + '\')">' + esc(a.label) + '</button>').join('') +
+      '<button id="tab-help" onclick="showPage(\'help\')">How to use</button>' +
       '<button id="tab-fb" onclick="showPage(\'fb\')">Feedback</button>';
     $('pages').innerHTML = list.map(pageHTML).join('');
     $('tabs').dataset.built = '1';
+    renderHelp();
   }
   list.forEach(a => {
     if (!state[a.id]) state[a.id] = { all: [], items: [], editing: null };
     state[a.id].all = a.items || [];
     const en = $('en-' + a.id);
     if (en) en.checked = a.enabled !== false;
+    const ov = $('ovl-' + a.id);
+    if (ov) ov.checked = a.overlay !== false;
     const off = $('off-' + a.id);
     if (off) off.style.display = a.enabled === false ? 'block' : 'none';
     applyFilter(a.id);
@@ -1118,6 +1262,14 @@ function applyTheme(a) {
   r.setProperty('--accentDark', a.accentDark);
 }
 
+// The two tabs that belong to no host wear a neutral grey, so the coloured
+// tabs always mean "this is an app's shortcut list".
+const NEUTRAL = { accent: '#5A6169', accent2: '#767D85', accentDark: '#454A50' };
+const SUBTITLE = {
+  help: 'How ⌥XL works, and how to build shortcuts of your own.',
+  fb: 'Tell me what works and what is missing.',
+};
+
 function showPage(which) {
   if (!which) return;
   current = which;
@@ -1126,13 +1278,14 @@ function showPage(which) {
     if (p) p.className = 'page' + (which === a.id ? ' on' : '');
     if (t) t.className = (which === a.id ? 'on' : '');
   });
-  $('page-fb').className = 'page' + (which === 'fb' ? ' on' : '');
-  $('tab-fb').className = (which === 'fb' ? 'on' : '');
+  ['help', 'fb'].forEach(k => {
+    $('page-' + k).className = 'page' + (which === k ? ' on' : '');
+    $('tab-' + k).className = (which === k ? 'on' : '');
+  });
   const host = apps.filter(x => x.id === which)[0];
-  applyTheme(host || apps[0]);
-  $('sub').textContent = which === 'fb'
-    ? 'Tell me what works and what is missing.'
-    : 'Tap ⌥ in ' + (host ? host.label : '') + ', then type a sequence. Changes apply instantly.';
+  applyTheme(host || NEUTRAL);
+  $('sub').textContent = SUBTITLE[which] ||
+    ('Tap ⌥ in ' + (host ? host.label : '') + ', then type a sequence. Changes apply instantly.');
   if (which === 'fb') send({ op: 'loadstats' });
 }
 
@@ -1257,9 +1410,6 @@ function setStats(s) {
 }
 
 function setStatus(ok) { $('ax').style.display = ok ? 'none' : 'flex'; }
-function setOverlay(on) {
-  apps.forEach(a => { const b = $('ovl-' + a.id); if (b) b.checked = !!on; });
-}
 send({ op: 'load' });
 </script></body></html>
 ]==]
@@ -1273,12 +1423,13 @@ local function pushCatalog()
       id = a.id, label = a.label, noun = a.noun, as = a.as,
       accent = a.accent, accent2 = a.accent2, accentDark = a.accentDark,
       enabled = ExcelAlt.appEnabled[a.id] ~= false,
+      overlay = ExcelAlt.overlayOn[a.id] ~= false,
       items = CATALOG[a.id] or {},
     }
   end
   ExcelAlt.manager:evaluateJavaScript("render(" .. hs.json.encode(payload) .. ")")
   ExcelAlt.manager:evaluateJavaScript("setStatus(" .. tostring(hs.accessibilityState() == true) .. ")")
-  ExcelAlt.manager:evaluateJavaScript("setOverlay(" .. tostring(ExcelAlt.overlayOn == true) .. ")")
+  ExcelAlt.manager:evaluateJavaScript("setTutorial(" .. hs.json.encode(TUTORIAL) .. ")")
 end
 pushCatalogRef = pushCatalog
 
@@ -1288,6 +1439,13 @@ local function savePrefs()
     overlayOn = ExcelAlt.overlayOn,
     appEnabled = ExcelAlt.appEnabled,
   })
+end
+
+local function anyOverlayOn()
+  for _, a in ipairs(APPS) do
+    if ExcelAlt.overlayOn[a.id] ~= false then return true end
+  end
+  return false
 end
 
 local function saveStore()
@@ -1383,14 +1541,18 @@ local function openManager()
       pcall(pushStatsToUI)
       refreshStats()
     elseif b.op == "overlay" then
-      ExcelAlt.overlayOn = (b.on == true)
-      savePrefs()
-      if not ExcelAlt.overlayOn then pcall(overlayHide) end
+      if APP[b.app] then
+        ExcelAlt.overlayOn[b.app] = (b.on == true)
+        savePrefs()
+        if not anyOverlayOn() then pcall(overlayHide) end
+        pcall(pushCatalogRef)
+      end
     elseif b.op == "appenabled" then
       if APP[b.app] then
         ExcelAlt.appEnabled[b.app] = (b.on == true)
         savePrefs()
         updateTaps()
+        pcall(pushCatalogRef)   -- so the page's warning banner matches
       end
     elseif b.op == "axsettings" then
       hs.execute("open 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'")
@@ -1441,8 +1603,16 @@ end
 -- ---------------------------------------------------------------------
 local function menubarMenu()
   local accessOK = hs.accessibilityState()
-  local hostItems = {}
+  local hostItems, overlayItems = {}, {}
   for _, a in ipairs(APPS) do
+    overlayItems[#overlayItems + 1] = {
+      title = (ExcelAlt.overlayOn[a.id] ~= false and "✓ " or "    ") .. a.label,
+      fn = function()
+        ExcelAlt.overlayOn[a.id] = (ExcelAlt.overlayOn[a.id] == false)
+        savePrefs()
+        if not anyOverlayOn() then overlayHide() end
+        pcall(pushCatalogRef)
+      end }
     hostItems[#hostItems + 1] = {
       title = (ExcelAlt.appEnabled[a.id] ~= false and "✓ " or "    ") .. a.label,
       fn = function()
@@ -1460,13 +1630,7 @@ local function menubarMenu()
         updateTaps()
       end },
     { title = "Active in…", menu = hostItems },
-    { title = ExcelAlt.overlayOn and "✓ Show KeyTips overlay" or "KeyTips overlay hidden",
-      fn = function()
-        ExcelAlt.overlayOn = not ExcelAlt.overlayOn
-        savePrefs()
-        if not ExcelAlt.overlayOn then overlayHide() end
-        pcall(pushCatalogRef)
-      end },
+    { title = "KeyTips overlay…", menu = overlayItems },
     { title = "-" },
     { title = "Shortcut Manager…", fn = openManager },
     { title = "-" },
@@ -1550,7 +1714,16 @@ end
 local prefs = readJSON(PREFS)
 if prefs then
   if prefs.enabled == false then ExcelAlt.enabled = false end
-  if prefs.overlayOn == false then ExcelAlt.overlayOn = false end
+  -- overlayOn was a single boolean before the overlay became per-host; an
+  -- old "false" means the user had switched the panel off, so honour that
+  -- for all three rather than silently turning it back on.
+  if prefs.overlayOn == false then
+    for _, a in ipairs(APPS) do ExcelAlt.overlayOn[a.id] = false end
+  elseif type(prefs.overlayOn) == "table" then
+    for _, a in ipairs(APPS) do
+      if prefs.overlayOn[a.id] == false then ExcelAlt.overlayOn[a.id] = false end
+    end
+  end
   if type(prefs.appEnabled) == "table" then
     for _, a in ipairs(APPS) do
       if prefs.appEnabled[a.id] == false then ExcelAlt.appEnabled[a.id] = false end

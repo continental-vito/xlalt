@@ -265,14 +265,18 @@ mock.flushTimers()
 check("W V G toggles gridlines via AppleScript",
   lastScript():find("display gridlines of active window") ~= nil, lastScript())
 
-ExcelAlt.overlayOn = false
+-- The overlay switch is per host: switching it off for Excel must silence
+-- Excel only, and must not disturb the other two.
+ExcelAlt.overlayOn.excel = false
 local nAlerts = #mock.log.alerts
 tapOption()
 typeKeys("hoi")
 mock.flushTimers()
 check("overlay OFF: action fires but no confirmation alert",
   lastScript():find("autofit entire column") ~= nil and #mock.log.alerts == nAlerts)
-ExcelAlt.overlayOn = true
+check("switching the overlay off for one host leaves the others on",
+  ExcelAlt.overlayOn.powerpoint ~= false and ExcelAlt.overlayOn.word ~= false)
+ExcelAlt.overlayOn.excel = true
 
 -- =====================================================================
 print("\n[6c] Feedback")
@@ -441,10 +445,17 @@ do
           '"mods":"cmd","key":"9"}],"disabled":{"hba":true},' ..
           '"renames":{"h0":{"seq":"hdd","desc":"More decimals"}}}')
   f:close()
+  -- prefs.json from an older build stored overlayOn as a single boolean
+  local pf = io.open(tmp2 .. "/Library/Application Support/ExcelAlt/prefs.json", "w")
+  pf:write('{"enabled":true,"overlayOn":false}')
+  pf:close()
   os.getenv = function(k) if k == "HOME" then return tmp2 end return origGetenv(k) end
 
   dofile("src/init.lua")
   local T2 = ExcelAlt._test
+  check("an old global 'overlay off' is honoured for every host",
+    ExcelAlt.overlayOn.excel == false and ExcelAlt.overlayOn.powerpoint == false and
+    ExcelAlt.overlayOn.word == false)
   local st = T2.store()
   check("v1 custom shortcut survives the migration",
     T2.exact("excel")["hqq"] ~= nil and st.apps.excel.custom[1].seq == "hqq")

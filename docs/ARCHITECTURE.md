@@ -12,7 +12,7 @@ Version 10 violated rule 2 and froze typing machine-wide; the v11 architecture a
 
 ## Hosts
 
-Three applications are supported, each with its own shortcut set, its own slice of `shortcuts.json`, its own accent colour in the manager, and its own on/off switch. They are declared once in the `APPS` table at the top of `src/init.lua`:
+Three applications are supported, each with its own shortcut set, its own slice of `shortcuts.json`, its own accent colour in the manager, and its own pair of switches (shortcuts on/off, KeyTips overlay on/off). Nothing about a host is global: someone fluent in Excel's sequences can silence its overlay while still learning Word's. They are declared once in the `APPS` table at the top of `src/init.lua`:
 
 | id | bundle | AppleScript name | accent |
 |---|---|---|---|
@@ -41,6 +41,14 @@ build/build-app.sh    Reproducible macOS build → dist/XL.dmg + update archive
 build/build-local.sh  Dev build: test, build, install to ~/Applications, launch
 .github/workflows/    CI: Lua suite + manager UI suite on every push
 ```
+
+## Manager tabs
+
+Five tabs: one per host, then **How to use** and **Feedback**. The two that belong to no host are deliberately neutral grey, so a coloured tab always means "this is an app's shortcut list".
+
+Host pages are generated from a single template (`pageHTML`), so the three stay identical by construction. The full guide to the three shortcut methods lives on How to use rather than being folded into each host page — it is the same three methods everywhere, and the AppleScript vocabularies are worth seeing side by side.
+
+Tutorial videos come from the `TUTORIAL` table at the top of `init.lua`. An entry with an empty `url` renders a "coming soon" tile, so the layout is correct before the recordings exist. To add one: drop the file into a GitHub issue comment, then paste the resulting `user-attachments` URL into the table.
 
 ## Persistence
 

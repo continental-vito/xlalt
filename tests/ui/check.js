@@ -33,15 +33,15 @@ check('page asks the engine for its catalog on load',
 
 const APPS = [
   { id: 'excel', label: 'Excel', accent: '#0F6A3F', accent2: '#1F8A55', accentDark: '#0C5733',
-    enabled: true, items: [
+    enabled: true, overlay: true, items: [
       { seq: 'hvv', desc: 'Paste values', builtin: true, orig: 'hvv', kind: 'applescript',
         cmd: 'Script: paste special', param: 'paste special selection what paste values' }] },
   { id: 'powerpoint', label: 'PowerPoint', accent: '#C43E1C', accent2: '#E2603C', accentDark: '#9E3116',
-    enabled: true, items: [
+    enabled: true, overlay: false, items: [
       { seq: 'hi', desc: 'New slide', builtin: true, orig: 'hi', kind: 'keystroke',
         cmd: 'Keys: ⌘⇧N', param: 'cmd+shift+n' }] },
   { id: 'word', label: 'Word', accent: '#185ABD', accent2: '#2B7CD3', accentDark: '#12489A',
-    enabled: false, items: [
+    enabled: false, overlay: true, items: [
       { seq: 'hs2', desc: 'Heading 2', builtin: true, orig: 'hs2', kind: 'keystroke',
         cmd: 'Keys: ⌘⌥2', param: 'cmd+alt+2' },
       { seq: 'hzz', desc: 'My macro', builtin: false, orig: 'hzz', kind: 'keystroke',
@@ -51,12 +51,12 @@ const APPS = [
 w.render(APPS);
 
 // ---------------------------------------------------------------- tabs
-check('four tabs are built: three hosts plus Feedback',
-  d.querySelectorAll('#tabs button').length === 4,
+check('five tabs are built: three hosts plus How to use and Feedback',
+  d.querySelectorAll('#tabs button').length === 5,
   d.querySelectorAll('#tabs button').length);
-check('tab labels read Excel / PowerPoint / Word / Feedback',
+check('tab labels read Excel / PowerPoint / Word / How to use / Feedback',
   [...d.querySelectorAll('#tabs button')].map(b => b.textContent).join(',') ===
-  'Excel,PowerPoint,Word,Feedback');
+  'Excel,PowerPoint,Word,How to use,Feedback');
 check('a page exists for every host',
   !!d.getElementById('page-excel') && !!d.getElementById('page-powerpoint') && !!d.getElementById('page-word'));
 check('Excel is the tab shown first',
@@ -77,9 +77,13 @@ check('Word theme is blue', accent() === '#185ABD', accent());
 check('header subtitle names the current host',
   d.getElementById('sub').textContent.includes('Word'), d.getElementById('sub').textContent);
 w.showPage('fb');
-check('Feedback tab falls back to the Excel theme', accent() === '#0F6A3F', accent());
+check('Feedback tab is neutral grey, not a host colour', accent() === '#5A6169', accent());
 check('opening Feedback asks the engine for stats',
   sent.some(m => m.op === 'loadstats'));
+w.showPage('help');
+check('How to use tab is neutral grey too', accent() === '#5A6169', accent());
+check('leaving a host page restores that host colour on return',
+  (w.showPage('powerpoint'), accent() === '#C43E1C'), accent());
 
 // ----------------------------------------------------------------- rows
 check('each host renders its own rows',
@@ -154,16 +158,52 @@ check('a re-render preserves what the user typed in the search box',
   d.getElementById('search-excel').value === 'paste');
 
 // -------------------------------------------------------------- overlay
-w.setOverlay(true);
-check('the overlay switch is mirrored on every host page',
-  d.getElementById('ovl-excel').checked && d.getElementById('ovl-word').checked);
+check('the overlay switch reflects each host independently',
+  d.getElementById('ovl-excel').checked === true &&
+  d.getElementById('ovl-powerpoint').checked === false &&
+  d.getElementById('ovl-word').checked === true);
+d.getElementById('ovl-powerpoint').checked = true;
+d.getElementById('ovl-powerpoint').dispatchEvent(new w.Event('change'));
+check('toggling the overlay names the host it applies to',
+  sent.some(m => m.op === 'overlay' && m.app === 'powerpoint' && m.on === true),
+  JSON.stringify(sent[sent.length - 1]));
 w.setStatus(false);
 check('missing Accessibility raises the banner', d.getElementById('ax').style.display === 'flex');
+
+// ------------------------------------------------------------ how to use
+check('the guide is no longer folded into each host page',
+  d.querySelectorAll('#page-excel details').length === 0);
+check('each host page links to the guide instead',
+  d.querySelector('#page-excel .hint a').textContent.includes('How to use'));
+const help = d.getElementById('help-body');
+check('the guide page documents all three methods in full',
+  /Keystroke/.test(help.textContent) && /Menu path/.test(help.textContent) &&
+  /AppleScript/.test(help.textContent) && help.querySelectorAll('.card').length === 3);
+check('the guide warns that menu paths are language-specific',
+  /language/i.test(help.querySelector('.warn').textContent));
+check('AppleScript examples are given for every host',
+  /go to slide/.test(help.textContent) && /font object of selection/.test(help.textContent) &&
+  /zoom of active window/.test(help.textContent));
+check('videos render as placeholders until a URL is supplied',
+  help.querySelectorAll('.vid .soon').length === 0 && help.querySelectorAll('video').length === 0);
+
+w.setTutorial([
+  { title: 'Getting started', caption: 'First run.', url: '' },
+  { title: 'Sequences', caption: 'Using them.', url: 'https://example.test/a.mp4' },
+]);
+const help2 = d.getElementById('help-body');
+check('a tutorial entry without a URL shows a coming-soon tile',
+  help2.querySelectorAll('.vid .soon').length === 1);
+check('a tutorial entry with a URL renders a player',
+  help2.querySelectorAll('video').length === 1 &&
+  help2.querySelector('video').getAttribute('src') === 'https://example.test/a.mp4');
+check('tutorial titles and captions are shown',
+  /Getting started/.test(help2.textContent) && /First run/.test(help2.textContent));
 
 // -------------------------------------------------------------- escaping
 d.getElementById('search-excel').value = '';
 w.render([{ id: 'excel', label: 'Excel', accent: '#0F6A3F', accent2: '#1F8A55', accentDark: '#0C5733',
-  enabled: true, items: [{ seq: 'hxx', desc: '<img src=x onerror=alert(1)>', builtin: false,
+  enabled: true, overlay: true, items: [{ seq: 'hxx', desc: '<img src=x onerror=alert(1)>', builtin: false,
   orig: 'hxx', kind: 'menu', cmd: 'Menu: a>b', param: 'a>b' }] }, APPS[1], APPS[2]]);
 check('descriptions are escaped, not injected as HTML',
   d.querySelectorAll('#rows-excel img').length === 0 &&

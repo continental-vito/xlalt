@@ -83,6 +83,10 @@ rm -rf ~/Applications/ExcelAlt-dev.app \
 Then remove "⌥XL (dev)" from System Settings → Privacy & Security →
 Accessibility.
 
+## Adding a tutorial video
+
+Record it, drag the file into a comment box on any issue in this repo, wait for the upload, then paste the `https://github.com/user-attachments/…` URL into the matching entry of the `TUTORIAL` table near the top of `src/init.lua`. Empty `url` = placeholder tile. No other change is needed; the How to use tab renders whatever is in the table.
+
 ## Shipping
 
 Once the feature is validated on the laptop:
