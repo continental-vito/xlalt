@@ -2,10 +2,10 @@
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
 <channel><title>⌥XL</title>
 <item>
-<title>Version 3.1</title>
-<sparkle:version>19</sparkle:version>
-<sparkle:shortVersionString>3.1</sparkle:shortVersionString>
+<title>Version 3.2</title>
+<sparkle:version>20</sparkle:version>
+<sparkle:shortVersionString>3.2</sparkle:shortVersionString>
 <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
-<enclosure url="https://github.com/continental-vito/xlalt/releases/download/v3.1/ExcelAlt-update.zip" length="9979863" type="application/octet-stream" sparkle:edSignature="glowvjcwj0ZKE63jgAq+BMjOnS2341PtkGPfR6HEg4doH6ZLB/xPyp1HdKU8BHLK4OMwBly7x26sDa0uO93dAg=="/>
+<enclosure url="https://github.com/continental-vito/xlalt/releases/download/v3.2/ExcelAlt-update.zip" length="9988774" type="application/octet-stream" sparkle:edSignature="LLWDtmD0O9BypAbRrTxsMaLpqQUQh7B/8IRJ5myVH2FdCVNZhXKCjMt5TUQZkP3l5+WF0+GZhbZ/1319hAmVAA=="/>
 </item>
 </channel></rss>
