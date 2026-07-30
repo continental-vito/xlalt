@@ -11,7 +11,7 @@ Sources (both 716x716 RGBA line art, identical alpha, different ink):
 Outputs:
     AppIcon.icns     app icon: ink corgi on a paper squircle
     icon-1024.png    same at 1024, for listings and the website
-    xl-corgi.png     white corgi, embedded in the manager header
+    xl-corgi.png     header logo: white fill, black strokes
     menubar.png      menu bar template, 18pt
     menubar@2x.png   menu bar template, 36px
 
@@ -22,7 +22,7 @@ import math
 import os
 import struct
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INK = os.path.join(HERE, "corgi-ink.png")
@@ -108,6 +108,56 @@ def write_icns(path):
     return len(icns)
 
 
+def filled_corgi(px, seal=18):
+    """The header logo: enclosed areas filled white, strokes left black.
+
+    The interior is found by flood-filling the background inward from a
+    corner — everything the flood cannot reach is inside the corgi. The
+    outline is not a closed path though (the chin is open, and the blaze
+    lines stop short of the muzzle), so the flood escapes into the face
+    and nothing fills. The stroke mask is therefore dilated first to seal
+    those gaps, and the recovered interior is dilated back by the same
+    amount afterwards.
+
+    `seal` is bounded on both sides and was measured, not guessed: below
+    14 the blaze stays hollow because the flood still gets in through the
+    chin; at 36 the dilation swallows the cheeks entirely. 18 sits clear
+    of both.
+    """
+    src = Image.open(INK).convert("RGBA")
+    stroke = src.getchannel("A").point(lambda v: 255 if v > 110 else 0)
+
+    sealed = stroke.filter(ImageFilter.MaxFilter(2 * seal + 1))
+    flooded = sealed.copy()
+    ImageDraw.floodfill(flooded, (0, 0), 128)
+    outside = flooded.point(lambda v: 255 if v == 128 else 0)
+
+    # Grow the OUTSIDE back by the same amount and fill everything else,
+    # rather than growing the inside. Same result over large areas, but it
+    # also catches pockets smaller than the seal radius — the slivers
+    # where an eye meets a blaze line were being left transparent, because
+    # dilation had swallowed them whole and there was no surviving seed to
+    # grow back from.
+    outside = outside.filter(ImageFilter.MaxFilter(2 * seal + 1))
+    outside = ImageChops.subtract(outside, stroke)
+    inner = ImageChops.subtract(
+        Image.eval(stroke, lambda v: 255 - v), outside)
+
+    out = Image.new("RGBA", src.size, (255, 255, 255, 0))
+    out.putalpha(inner)                        # white fill
+    out = Image.alpha_composite(out, src)      # black strokes on top
+
+    # Transparent pixels carry RGB too, and PIL does not premultiply on
+    # resize: leaving them black would drag a dark fringe around the white
+    # edges on the way down to `px`.
+    rgb = out.convert("RGB")
+    white = Image.new("RGB", src.size, (255, 255, 255))
+    a = out.getchannel("A")
+    flat = Image.composite(rgb, white, a.point(lambda v: 255 if v > 0 else 0))
+    flat.putalpha(a)
+    return flat.resize((px, px), Image.LANCZOS)
+
+
 def menubar_template(px):
     """Menu bar icons use the ALPHA channel only — macOS recolours them for
     light and dark bars, so the white source and the ink source would give
@@ -131,10 +181,9 @@ def main():
     n = write_icns(os.path.join(HERE, "AppIcon.icns"))
     app_icon(1024).save(os.path.join(HERE, "icon-1024.png"))
 
-    # White corgi for the manager header. 256px is ample for a 44pt slot and
-    # keeps the base64 blob embedded in init.lua small.
-    Image.open(WHITE).convert("RGBA").resize((256, 256), Image.LANCZOS) \
-        .save(os.path.join(HERE, "xl-corgi.png"))
+    # Manager header: filled white with black strokes. 256px is ample for a
+    # 48pt slot and keeps the base64 blob embedded in init.lua small.
+    filled_corgi(256).save(os.path.join(HERE, "xl-corgi.png"))
 
     menubar_template(18).save(os.path.join(HERE, "menubar.png"))
     menubar_template(36).save(os.path.join(HERE, "menubar@2x.png"))
