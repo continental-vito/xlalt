@@ -108,6 +108,18 @@ def write_icns(path):
     return len(icns)
 
 
+def _jaw_tip(stroke, half):
+    """Lowest stroke pixel in the left (0) or right (1) half of the image."""
+    w, h = stroke.size
+    px = stroke.load()
+    x0, x1 = (0, w // 2) if half == 0 else (w // 2, w)
+    for y in range(h - 1, -1, -1):
+        for x in range(x0, x1):
+            if px[x, y] > 128:
+                return (x, y)
+    return (x0, h - 1)
+
+
 def filled_corgi(px, seal=18):
     """The header logo: enclosed areas filled white, strokes left black.
 
@@ -127,7 +139,17 @@ def filled_corgi(px, seal=18):
     src = Image.open(INK).convert("RGBA")
     stroke = src.getchannel("A").point(lambda v: 255 if v > 110 else 0)
 
-    sealed = stroke.filter(ImageFilter.MaxFilter(2 * seal + 1))
+    # The jaw is drawn open: the two lower fur curves stop 333px apart and
+    # the chin is implied rather than drawn. Nothing closes the silhouette
+    # down there, so the flood walks straight up into the muzzle and the
+    # mouth ends up sitting on bare background instead of on white. Join
+    # the two lowest stroke tips with a line — on the mask only, never on
+    # the artwork — so the head reads as closed for filling purposes.
+    closed = stroke.copy()
+    ImageDraw.Draw(closed).line([_jaw_tip(stroke, 0), _jaw_tip(stroke, 1)],
+                                fill=255, width=max(4, src.width // 90))
+
+    sealed = closed.filter(ImageFilter.MaxFilter(2 * seal + 1))
     flooded = sealed.copy()
     ImageDraw.floodfill(flooded, (0, 0), 128)
     outside = flooded.point(lambda v: 255 if v == 128 else 0)
@@ -141,7 +163,7 @@ def filled_corgi(px, seal=18):
     outside = outside.filter(ImageFilter.MaxFilter(2 * seal + 1))
     outside = ImageChops.subtract(outside, stroke)
     inner = ImageChops.subtract(
-        Image.eval(stroke, lambda v: 255 - v), outside)
+        Image.eval(closed, lambda v: 255 - v), outside)
 
     out = Image.new("RGBA", src.size, (255, 255, 255, 0))
     out.putalpha(inner)                        # white fill
