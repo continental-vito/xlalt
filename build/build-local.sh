@@ -118,12 +118,18 @@ rm -rf "$DEV_APP"
 ditto "dist/${XL_BUNDLE_NAME}.app" "$DEV_APP"
 
 # macOS caches app icons hard. Reusing the same install path across builds
-# means Finder, the Dock and the About panel will happily show the icon
-# from three builds ago until LaunchServices is told the bundle changed.
+# means Finder and the About panel can show the icon from three builds
+# ago until LaunchServices is told the bundle changed. Re-registering the
+# bundle is enough and is inert.
+#
+# This deliberately does NOT restart the Dock. An earlier version ran
+# `killall Dock` here: normally launchd respawns it in under a second,
+# but when it does not the user loses the Dock, Mission Control and
+# Cmd-Tab at once — no build script should be able to do that to a
+# machine someone is working on.
 touch "$DEV_APP"
 [ -x "$LSREGISTER" ] && "$LSREGISTER" -f "$DEV_APP" 2>/dev/null
-killall Dock 2>/dev/null || true
-echo "→ Installed $DEV_APP (icon cache refreshed)"
+echo "→ Installed $DEV_APP"
 
 if [ -n "$LAUNCH" ]; then
   open -a "$DEV_APP"
@@ -146,6 +152,9 @@ cat <<NOTES
   macOS will ask for Accessibility for "⌥XL (dev)" separately. Ad-hoc
   signing changes the code hash every build, so it may ask again after a
   rebuild; if shortcuts are dead and nothing is asked, re-run --reset-tcc.
+
+  If the Dock or Finder still shows an old icon, log out and back in —
+  that clears the icon cache without restarting anything by force.
 
   Done testing: quit ⌥XL (dev) and reopen /Applications/ExcelAlt.app.
   To remove the dev build entirely:
