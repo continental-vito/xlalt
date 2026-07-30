@@ -56,7 +56,15 @@ mv "$APP/Contents/MacOS/Hammerspoon" "$APP/Contents/MacOS/ExcelAltCore"
 clang -O2 -o "$APP/Contents/MacOS/ExcelAlt" build/launcher.c -framework CoreFoundation
 
 echo "→ Branding the About window"
-cp build/Credits.html "$APP/Contents/Resources/Credits.html"
+# The About window is a plain Credits.html with no base URL, so the corgi
+# cannot be referenced as a sibling file — embed it as a data URI.
+python3 - "$APP/Contents/Resources/Credits.html" <<'PY'
+import base64, sys
+html = open("build/Credits.html", encoding="utf-8").read()
+png = base64.b64encode(open("assets/xl-corgi.png", "rb").read()).decode()
+html = html.replace("CORGI_SRC", "data:image/png;base64," + png)
+open(sys.argv[1], "w", encoding="utf-8").write(html)
+PY
 rm -f "$APP/Contents/Resources/Credits.rtf" 2>/dev/null || true
 # Some AppKit builds read Credits files as MacRoman unless the charset is
 # declared in-file (done above) — verify it is valid UTF-8 before shipping.
@@ -75,6 +83,7 @@ if [ -f assets/AppIcon.icns ]; then
   cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 fi
 [ -f assets/menubar@2x.png ] && cp assets/menubar@2x.png "$APP/Contents/Resources/xl-menubar@2x.png"
+[ -f assets/menubar.png ]    && cp assets/menubar.png    "$APP/Contents/Resources/xl-menubar.png"
 [ -f assets/xl-corgi.png ]   && cp assets/xl-corgi.png   "$APP/Contents/Resources/xl-corgi.png"
 
 echo "→ Signing (ad-hoc)"

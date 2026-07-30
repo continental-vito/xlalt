@@ -932,7 +932,8 @@ local MANAGER_HTML = [==[
 body { background:var(--paper); color:var(--ink); padding:0 0 40px; }
 header { background:linear-gradient(180deg,var(--accent2),var(--accent)); color:#fff;
   padding:16px 24px; display:flex; align-items:center; gap:14px; transition:background .18s; }
-header img { width:44px; height:44px; border-radius:10px; }
+/* Line art on transparent: no tile, no corner rounding to clip. */
+header img { width:48px; height:48px; display:block; }
 header h1 { font-size:19px; font-weight:700; }
 header p { font-size:12px; opacity:.85; margin-top:2px; }
 main { padding:18px 24px; max-width:860px; margin:0 auto; }
