@@ -932,8 +932,13 @@ local MANAGER_HTML = [==[
 body { background:var(--paper); color:var(--ink); padding:0 0 40px; }
 header { background:linear-gradient(180deg,var(--accent2),var(--accent)); color:#fff;
   padding:16px 24px; display:flex; align-items:center; gap:14px; transition:background .18s; }
-/* Line art on transparent: no tile, no corner rounding to clip. */
-header img { width:48px; height:48px; display:block; }
+/* Line art on transparent: no tile, no corner rounding to clip. The
+   shadow follows the strokes rather than a box, which is what
+   drop-shadow does and box-shadow cannot. Two passes: a tight one for
+   definition against the green, a softer one for lift. */
+header img { width:48px; height:48px; display:block;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,.30))
+          drop-shadow(0 2px 5px rgba(0,0,0,.20)); }
 header h1 { font-size:19px; font-weight:700; }
 header p { font-size:12px; opacity:.85; margin-top:2px; }
 main { padding:18px 24px; max-width:860px; margin:0 auto; }

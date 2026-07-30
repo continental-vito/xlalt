@@ -56,15 +56,11 @@ mv "$APP/Contents/MacOS/Hammerspoon" "$APP/Contents/MacOS/ExcelAltCore"
 clang -O2 -o "$APP/Contents/MacOS/ExcelAlt" build/launcher.c -framework CoreFoundation
 
 echo "→ Branding the About window"
-# The About window is a plain Credits.html with no base URL, so the corgi
-# cannot be referenced as a sibling file — embed it as a data URI.
-python3 - "$APP/Contents/Resources/Credits.html" <<'PY'
-import base64, sys
-html = open("build/Credits.html", encoding="utf-8").read()
-png = base64.b64encode(open("assets/xl-corgi.png", "rb").read()).decode()
-html = html.replace("CORGI_SRC", "data:image/png;base64," + png)
-open(sys.argv[1], "w", encoding="utf-8").write(html)
-PY
+# Text only. The About panel already shows the app icon above this
+# content, and AppKit renders Credits HTML through NSAttributedString,
+# which ignores width/height on <img> and draws at natural size — an
+# image here arrives enormous, not as the 54px badge you asked for.
+cp build/Credits.html "$APP/Contents/Resources/Credits.html"
 rm -f "$APP/Contents/Resources/Credits.rtf" 2>/dev/null || true
 # Some AppKit builds read Credits files as MacRoman unless the charset is
 # declared in-file (done above) — verify it is valid UTF-8 before shipping.

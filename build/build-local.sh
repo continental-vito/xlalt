@@ -109,10 +109,21 @@ if [ -n "$RESET_TCC" ]; then
 fi
 
 mkdir -p "$HOME/Applications"
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+# Drop the old record before the bundle disappears, or LaunchServices keeps
+# pointing at a path that no longer exists.
+[ -x "$LSREGISTER" ] && [ -d "$DEV_APP" ] && "$LSREGISTER" -u "$DEV_APP" 2>/dev/null
 rm -rf "$DEV_APP"
 # ditto, not cp: the bundle signature lives in extended attributes.
 ditto "dist/${XL_BUNDLE_NAME}.app" "$DEV_APP"
-echo "→ Installed $DEV_APP"
+
+# macOS caches app icons hard. Reusing the same install path across builds
+# means Finder, the Dock and the About panel will happily show the icon
+# from three builds ago until LaunchServices is told the bundle changed.
+touch "$DEV_APP"
+[ -x "$LSREGISTER" ] && "$LSREGISTER" -f "$DEV_APP" 2>/dev/null
+killall Dock 2>/dev/null || true
+echo "→ Installed $DEV_APP (icon cache refreshed)"
 
 if [ -n "$LAUNCH" ]; then
   open -a "$DEV_APP"
