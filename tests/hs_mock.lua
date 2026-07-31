@@ -283,7 +283,13 @@ hs.base64 = { encode = function(s) return "b64" end }
 hs.processInfo = { resourcePath = "/tmp/xl-test-resources",
                    bundleID = "com.corgianalyst.excel-alt-shortcuts" }
 hs.plist = { read = function(_) return { CFBundleShortVersionString = "9.9" } end }
-hs.http = { asyncGet = function(_, _, cb) if cb then cb(404, "") end end }
+-- Tests set M.httpResponse = { status, body } to script the next fetch.
+hs.http = { asyncGet = function(url, _, cb)
+  M.log.http = M.log.http or {}
+  M.log.http[#M.log.http + 1] = url
+  local r = M.httpResponse or { 404, "" }
+  if cb then cb(r[1], r[2]) end
+end }
 hs.host = { operatingSystemVersion = function() return { major = 15, minor = 0, patch = 0 } end }
 hs.execute = function(cmd) M.log.executed = M.log.executed or {} ;
   M.log.executed[#M.log.executed + 1] = cmd ; return "", true, "exit", 0 end

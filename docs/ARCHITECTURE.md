@@ -94,6 +94,19 @@ The manager is ~400 lines of JavaScript embedded in `init.lua` as a string, gene
 
 Both apps can therefore be installed at once. They should not be *running* at once: two engines watching Excel would both fire on every sequence.
 
+## Updates
+
+Sparkle is present and its signing is correct — the appcast signature verifies against the key embedded in the app — but it **cannot install** anything here. Applying an update means launching `Sparkle.framework/Updater.app`, a nested helper, and macOS refuses to launch nested helpers inside an ad-hoc-signed, un-notarized bundle. The user gets *"An error occurred while running the updater"* with no way forward. This is not fixable in code; it needs a Developer ID certificate.
+
+So `SUEnableAutomaticChecks` is **false**, and the engine does its own check: it fetches the appcast, reads `sparkle:shortVersionString`, compares it numerically against `CFBundleShortVersionString`, and points the user at the releases page. Downloading the DMG always works.
+
+- Automatic check runs once, eight seconds after launch. There is no polling loop.
+- A version is announced at most once; `notifiedVersion` is persisted in `prefs.json`.
+- Automatic checks never open a browser. A manual **Check for Updates…** does, because the user asked.
+- Dev builds skip the automatic check entirely.
+
+When the certificate arrives: re-enable `SUEnableAutomaticChecks` in `build-app.sh` and this becomes redundant.
+
 ## Diagnosing a shortcut that does nothing
 
 `debug.log` records every sequence that resolves, plus every AppleScript or menu-path failure:
