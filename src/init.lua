@@ -701,16 +701,25 @@ local function overlayShow()
     ExcelAlt.overlayOn = {}
     for _, a in ipairs(APPS) do ExcelAlt.overlayOn[a.id] = on end
   end
-  if ExcelAlt.overlayOn[appId] == false then return end
+  -- "Overlay off" used to mean drawing nothing at all — while the taps
+  -- carried on swallowing every keystroke. Tap ⌥ by accident and the next
+  -- few characters simply vanished, with no clue why: type "hello" and
+  -- H, HE, HEL are eaten as a candidate sequence before it gives up.
+  -- Expert mode means "spare me the hint list", not "say nothing while
+  -- eating my typing", so a compact marker is always drawn.
+  local compact = ExcelAlt.overlayOn[appId] == false
   local hints = {}
-  for _, item in ipairs(CATALOG[appId] or {}) do
-    if item.seq:sub(1, #ExcelAlt.seq) == ExcelAlt.seq then
-      hints[#hints + 1] = item
-      if #hints == 9 then break end
+  if not compact then
+    for _, item in ipairs(CATALOG[appId] or {}) do
+      if item.seq:sub(1, #ExcelAlt.seq) == ExcelAlt.seq then
+        hints[#hints + 1] = item
+        if #hints == 9 then break end
+      end
     end
   end
-  local rows = math.max(#hints, 1)
-  local W, RH, PAD = 340, 24, 14
+  local rows = compact and 0 or math.max(#hints, 1)
+  local RH, PAD = 24, 14
+  local W = compact and 210 or 340
   local H = PAD * 2 + 30 + rows * RH
   local scr = hs.screen.mainScreen():frame()
   local c = hs.canvas.new({
@@ -725,14 +734,15 @@ local function overlayShow()
     type = "text",
     text = "⌥  " .. ExcelAlt.seq:upper() .. "▮",
     textSize = 17, textColor = { hex = host.tint },
-    frame = { x = PAD, y = PAD - 2, w = W - PAD * 2 - 90, h = 26 } })
+    frame = { x = PAD, y = PAD - 2, w = W - PAD * 2 - (compact and 66 or 90), h = 26 } })
   -- Which host's set is active: the same letters mean different things in
   -- Excel and Word, so the panel always says which one it is driving.
   c:appendElements({
     type = "text", text = host.label,
     textSize = 11, textColor = { hex = "#7E8A84" }, textAlignment = "right",
-    frame = { x = W - PAD - 90, y = PAD + 3, w = 90, h = 18 } })
-  if #hints == 0 then
+    frame = { x = W - PAD - (compact and 66 or 90), y = PAD + 3,
+              w = compact and 66 or 90, h = 18 } })
+  if not compact and #hints == 0 then
     c:appendElements({ type = "text", text = "no match — Esc to cancel",
       textSize = 13, textColor = { hex = "#999999" },
       frame = { x = PAD, y = PAD + 26, w = W - PAD * 2, h = RH } })
@@ -1277,8 +1287,8 @@ function pageHTML(a) {
         '<label class="sw" style="margin-top:9px"><input type="checkbox" id="ovl-' + id + '" ' +
           'onchange="send({op:\'overlay\', app:\'' + id + '\', on:this.checked})">' +
           '<span>Show KeyTips overlay in ' + esc(a.label) + '</span></label>' +
-        '<div class="note">Switch off once you know these sequences by heart; ' +
-          'the other apps keep theirs.</div>' +
+        '<div class="note">Off shows a small ⌥ marker instead of the hint list, ' +
+          'so you can still see when a sequence is being read.</div>' +
       '</div>' +
       '<input class="search" id="search-' + id + '" type="search" placeholder="Search shortcuts…" ' +
         'oninput="applyFilter(\'' + id + '\')">' +

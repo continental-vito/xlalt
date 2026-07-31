@@ -506,6 +506,44 @@ do
 end
 
 -- =====================================================================
+print("\n[13] Sequence mode is always visible, even with the overlay off")
+-- =====================================================================
+-- The taps swallow keystrokes whenever mode is on. If nothing is drawn,
+-- an accidental ⌥ tap eats the next few characters with no explanation.
+mock.activate(mock.EXCEL)
+do
+  ExcelAlt.overlayOn.excel = false
+  mock.lastCanvas = nil
+  tapOption()
+  typeKeys("h")                       -- a prefix: stays in mode
+  mock.flushTimers()
+  check("overlay off still draws a marker so mode is visible",
+    mock.lastCanvas ~= nil and mock.lastCanvas.visible == true)
+  local compact = mock.lastCanvas
+  check("the marker shows the sequence so far",
+    (function()
+      for _, e in ipairs(compact.elements) do
+        if e.text and tostring(e.text):find("H") then return true end
+      end
+      return false
+    end)())
+  check("the marker is narrow and lists no hints",
+    compact.frame.w == 210 and #compact.elements <= 3, #compact.elements)
+  ExcelAlt.mode, ExcelAlt.seq = false, ""
+
+  -- ...and with the overlay on, the full hint list is still drawn
+  ExcelAlt.overlayOn.excel = true
+  mock.lastCanvas = nil
+  tapOption()
+  typeKeys("h")
+  mock.flushTimers()
+  check("overlay on still draws the full panel with hints",
+    mock.lastCanvas ~= nil and mock.lastCanvas.frame.w == 340 and
+    #mock.lastCanvas.elements > 4, #mock.lastCanvas.elements)
+  ExcelAlt.mode, ExcelAlt.seq = false, ""
+end
+
+-- =====================================================================
 print("\n[7] Deferred-UI invariant (guards the v12 fix)")
 -- =====================================================================
 check("zero canvas/alert/screen calls ever executed inside a tap callback",
