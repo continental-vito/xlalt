@@ -297,6 +297,13 @@ hs.automaticallyCheckForUpdates = function(on)
   M.log.autoUpdateChecks = on
 end
 
+-- The runtime's Sparkle entry point. Tests set M.sparkleBroken to make it
+-- fail, which is how the fallback to the built-in downloader is checked.
+hs.checkForUpdates = function()
+  if M.sparkleBroken then error("sparkle unavailable") end
+  M.log.sparkleChecks = (M.log.sparkleChecks or 0) + 1
+end
+
 -- Subprocesses: tests script the outcome with M.taskResult[bin] and read
 -- back what was actually run.
 hs.task = { new = function(bin, done, args)

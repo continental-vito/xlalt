@@ -1919,7 +1919,15 @@ local function checkForUpdates(manual)
   end)
 end
 
-checkForUpdatesRef = function() checkForUpdates(true) end
+-- The menu item in the top-left app menu goes through Sparkle, and that
+-- is the path that installed updates before v3.2. Drive the same one
+-- from the manager so both do the same thing; fall back to the built-in
+-- downloader only if the runtime does not expose it.
+checkForUpdatesRef = function()
+  local ok = pcall(function() hs.checkForUpdates() end)
+  dlog("update check requested via " .. (ok and "Sparkle" or "built-in downloader"))
+  if not ok then checkForUpdates(true) end
+end
 
 local function menubarMenu()
   local accessOK = hs.accessibilityState()
@@ -1953,7 +1961,7 @@ local function menubarMenu()
     { title = "KeyTips overlay…", menu = overlayItems },
     { title = "-" },
     { title = "Shortcut Manager…", fn = openManager },
-    { title = "Check for Updates…", fn = function() checkForUpdates(true) end },
+    { title = "Check for Updates…", fn = function() checkForUpdatesRef() end },
     { title = "-" },
     { title = accessOK and "Accessibility: granted"
                         or "Grant Accessibility permission…",
@@ -2067,11 +2075,6 @@ do
   dlog("switches: global=" .. (ExcelAlt.enabled and "on" or "OFF") ..
        "  " .. table.concat(bits, "  "))
 end
-
--- Hammerspoon runs its own Sparkle check on launch. Silence it: the
--- update it would find cannot be installed (see the Updates section), so
--- all it can produce is an error dialog.
-pcall(function() hs.automaticallyCheckForUpdates(false) end)
 
 syncFrontmost("startup")
 

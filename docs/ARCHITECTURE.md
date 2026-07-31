@@ -96,29 +96,19 @@ Both apps can therefore be installed at once. They should not be *running* at on
 
 ## Updates
 
-**Check for updates** lives in the Shortcut Manager header, beside the version. It downloads and installs, then reopens the app.
+**Sparkle is the update path**, as it was up to v3.1. Both entry points — the runtime's *Check for Updates…* in the top-left app menu, and *Check for updates* in the Shortcut Manager header — call `hs.checkForUpdates()`, so they behave identically.
 
-It is in the window rather than only the menu bar because the menu bar status item never lays out on this app (known issue: macOS reports it at zero height), so the menu is not a dependable entry point. The runtime's *own* Check for Updates, in the top-left app menu, goes to Sparkle and cannot install anything here — with `SUFeedURL` removed it now reports a missing feed rather than failing later at the install step.
+`SUFeedURL` is in `Info.plist` and `release.yml` signs `ExcelAlt-update.zip` and publishes `appcast.xml`. `SUEnableAutomaticChecks` is `false` in `launcher.c`, which predates all of this and is deliberate: checking is manual, installing is Sparkle's job.
 
-Sparkle's only unsolvable step was the install: it applies an update by launching `Sparkle.framework/Updater.app`, and macOS refuses to launch a nested helper inside an ad-hoc-signed, un-notarized bundle. Every attempt ended at *"An error occurred while running the updater"*. Nothing else about updating is hard, so:
+### What went wrong, and what is still unknown
 
-1. read `appcast.xml` for the latest version, archive URL and byte count
-2. `curl` the archive to `/tmp/xlalt-update` — **curl, not the browser**: a browser download carries a quarantine flag and the replacement would meet Gatekeeper on first launch
-3. check the byte count against the appcast, and read `CFBundleShortVersionString` out of the unpacked bundle, before trusting it
-4. write a shell script to `/tmp/xlalt-update/swap.sh`, launch it detached, and quit. A script is not a nested app bundle, so nothing blocks it — this is the step Sparkle could not get past
-5. the script waits for the process to exit, swaps the bundle, clears quarantine and relaunches
+Updates installed through that menu up to v3.1 and started failing at v3.2 with *"An error occurred while running the updater"*. The build is not the cause — `git diff v3.1 v3.2 -- build/build-app.sh` shows the release identity, the signing and the update archive are produced by identical steps. The only functional difference between those releases is `src/init.lua`.
 
-The swap keeps the old bundle until the new one is in place and rolls back if the move fails, so a failure leaves a working app rather than none. It logs to `update.log` beside `debug.log`.
+I did not find the cause. I concluded Sparkle could not work here at all, switched it off across three files, and wrote a replacement downloader — which removed a path that had been working, and the replacement was then unreachable because its only entry point was the menu bar item that never lays out. All of that is reverted.
 
-Sparkle is silenced in three places, and all three are needed:
+The replacement downloader is kept as a **fallback**: if `hs.checkForUpdates()` is unavailable it runs instead, fetching the appcast, verifying the byte count and version, and swapping the bundle via a detached script. `debug.log` records which path ran.
 
-| where | what | why |
-|---|---|---|
-| `build/build-app.sh` | `SUEnableAutomaticChecks=false`, `SUFeedURL` deleted | nothing for Sparkle to act on |
-| `build/launcher.c` | the same keys cleared in user defaults every launch | **Info.plist values are only defaults** — a value written to user defaults on an earlier launch overrides the bundle forever after, which is why installed copies kept checking long after the plist said not to |
-| `src/init.lua` | `hs.automaticallyCheckForUpdates(false)` | the runtime runs its own Sparkle check at launch |
-
-`release.yml` still signs `ExcelAlt-update.zip` and publishes the appcast, so the feed the app reads is the same one Sparkle would have used. Accessibility must still be re-granted after each update until a Developer ID certificate exists.
+Anything that touches app termination, the app watcher, or the event taps is a candidate for the v3.2 regression, since Sparkle's installer needs the app to quit and relaunch. Bisecting the v3.1→v3.2 range against a real release is the way to settle it.
 
 ## The KeyTips panel
 

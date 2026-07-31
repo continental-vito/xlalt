@@ -36,25 +36,17 @@ int main(void) {
   CFPreferencesSetAppValue(CFSTR("MJConfigFile"), cfgs, kCFPreferencesCurrentApplication);
   CFRelease(cfgs);
 
-  /* Silence Sparkle at the only level that actually wins.
+  /* Undo the extra Sparkle lockout that v3.4-v3.6 wrote into this app's
+   * user defaults. Those values override Info.plist on every later
+   * launch, so shipping a corrected bundle is not enough on a machine
+   * that ran one of them — they have to be cleared explicitly.
    *
-   * SUEnableAutomaticChecks in Info.plist is only a DEFAULT: once a value
-   * has been written to this app's user defaults — which happens the
-   * first time Sparkle runs — that value overrides the bundle every
-   * launch afterwards. So an installed copy kept checking for updates
-   * long after the plist said not to, and every check ended at "An error
-   * occurred while running the updater", because applying an update means
-   * launching Sparkle's nested Updater.app and macOS refuses to do that
-   * inside an ad-hoc-signed, un-notarized bundle.
-   *
-   * Clearing SUFeedURL as well leaves nothing to check even if something
-   * does trigger one. All of this becomes unnecessary with a Developer ID
-   * certificate, at which point Sparkle can be turned back on. */
-  CFPreferencesSetAppValue(CFSTR("SUEnableAutomaticChecks"), kCFBooleanFalse,
+   * Note that SUEnableAutomaticChecks=false below is NOT part of that:
+   * it predates all of this and is deliberate. Automatic checking stays
+   * off; the manual "Check for Updates" is what installs. */
+  CFPreferencesSetAppValue(CFSTR("SUAutomaticallyUpdate"), NULL,
                            kCFPreferencesCurrentApplication);
-  CFPreferencesSetAppValue(CFSTR("SUAutomaticallyUpdate"), kCFBooleanFalse,
-                           kCFPreferencesCurrentApplication);
-  CFPreferencesSetAppValue(CFSTR("HSAutomaticallyCheckForUpdates"), kCFBooleanFalse,
+  CFPreferencesSetAppValue(CFSTR("HSAutomaticallyCheckForUpdates"), NULL,
                            kCFPreferencesCurrentApplication);
   CFPreferencesSetAppValue(CFSTR("SUFeedURL"), NULL, kCFPreferencesCurrentApplication);
   CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication);

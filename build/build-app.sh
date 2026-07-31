@@ -37,26 +37,18 @@ echo "→ Rebranding bundle"
 /usr/libexec/PlistBuddy -c "Delete :LSUIElement" "$APP/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $XL_VERSION" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $XL_BUILD" "$APP/Contents/Info.plist"
-# Sparkle is switched off in every build.
+# In-app updates: feed + EdDSA public key.
 #
-# It ships with the runtime and cannot be deleted (the binary links
-# against it), but it is able to download and verify an update and then
-# unable to install one: applying it launches Sparkle's nested
-# Updater.app, and macOS refuses to launch a nested helper inside an
-# ad-hoc-signed, un-notarized bundle. Every check a user ran therefore
-# ended at "An error occurred while running the updater".
-#
-# The app checks the same appcast and installs updates itself; removing
-# SUFeedURL leaves Sparkle nothing to act on even if something triggers
-# it. Note that these keys are only DEFAULTS: a value written
-# to the app's user defaults on an earlier launch overrides the bundle,
-# which is why launcher.c clears the same keys on every launch. The
-# public key stays so that re-enabling is a one-line change once a
-# Developer ID certificate exists.
-/usr/libexec/PlistBuddy -c "Set :SUEnableAutomaticChecks false" "$APP/Contents/Info.plist" 2>/dev/null || \
-  /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool false" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$APP/Contents/Info.plist" 2>/dev/null || true
-/usr/libexec/PlistBuddy -c "Delete :SUScheduledCheckInterval" "$APP/Contents/Info.plist" 2>/dev/null || true
+# This is deliberately back to the v3.1 configuration. Updates installed
+# through Sparkle before v3.2 and the build has not changed in any way
+# that touches them — the identity, the signing and the update archive
+# are produced by the same steps. Switching Sparkle off was my response
+# to a failure I never actually diagnosed, and it removed a path that
+# had been working.
+/usr/libexec/PlistBuddy -c "Set :SUEnableAutomaticChecks true" "$APP/Contents/Info.plist" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool true" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :SUFeedURL https://raw.githubusercontent.com/continental-vito/xlalt/main/appcast.xml" "$APP/Contents/Info.plist" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Add :SUFeedURL string https://raw.githubusercontent.com/continental-vito/xlalt/main/appcast.xml" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBKEY" "$APP/Contents/Info.plist" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $SPARKLE_PUBKEY" "$APP/Contents/Info.plist"
 mv "$APP/Contents/MacOS/Hammerspoon" "$APP/Contents/MacOS/ExcelAltCore"

@@ -602,17 +602,33 @@ local FEED = [[<?xml version="1.0"?><rss><channel><item>
 do
   ExcelAlt.version = "9.9" ; ExcelAlt.updating = false
   mock.httpResponse = { 404, "" }
+  mock.sparkleBroken = true
   local before = #mock.log.http
   T.web({ op = "checkupdates" })
   check("the manager's update link runs a real check",
     #mock.log.http == before + 1 and
     (mock.log.http[#mock.log.http]):find("appcast%.xml") ~= nil,
     mock.log.http[#mock.log.http])
+  mock.sparkleBroken = nil
   ExcelAlt.updating = false ; mock.httpResponse = nil
 end
 
-check("the runtime's own Sparkle check is switched off at startup",
-  mock.log.autoUpdateChecks == false, tostring(mock.log.autoUpdateChecks))
+check("the update entry point goes through Sparkle, as it did before v3.2",
+  (function()
+    mock.log.sparkleChecks = 0 ; mock.sparkleBroken = nil
+    T.web({ op = "checkupdates" })
+    return mock.log.sparkleChecks == 1
+  end)(), tostring(mock.log.sparkleChecks))
+
+check("if the runtime cannot do it, the built-in downloader takes over",
+  (function()
+    mock.sparkleBroken = true ; mock.httpResponse = { 404, "" }
+    local before = #mock.log.http
+    ExcelAlt.updating = false
+    T.web({ op = "checkupdates" })
+    mock.sparkleBroken = nil ; mock.httpResponse = nil ; ExcelAlt.updating = false
+    return #mock.log.http == before + 1
+  end)())
 
 check("versions compare numerically, not as strings",
   T.isNewer("3.10", "3.9") and T.isNewer("3.9", "3.8") and
