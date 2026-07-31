@@ -499,7 +499,7 @@ do
   ExcelAlt.overlayOn = true          -- as an ancient prefs.json would leave it
   tapOption()
   typeKeys("h")
-  mock.flushTimers()
+  mock.flushTimers(0.1)   -- the redraw, but not the 4s sequence timeout
   check("a legacy boolean overlay preference is repaired, not fatal",
     type(ExcelAlt.overlayOn) == "table" and ExcelAlt.overlayOn.excel == true)
   ExcelAlt.mode, ExcelAlt.seq = false, ""
@@ -516,7 +516,7 @@ do
   mock.lastCanvas = nil
   tapOption()
   typeKeys("h")                       -- a prefix: stays in mode
-  mock.flushTimers()
+  mock.flushTimers(0.1)
   check("overlay off still draws a marker so mode is visible",
     mock.lastCanvas ~= nil and mock.lastCanvas.visible == true)
   local compact = mock.lastCanvas
@@ -536,10 +536,31 @@ do
   mock.lastCanvas = nil
   tapOption()
   typeKeys("h")
-  mock.flushTimers()
+  mock.flushTimers(0.1)
   check("overlay on still draws the full panel with hints",
     mock.lastCanvas ~= nil and mock.lastCanvas.frame.w == 340 and
     #mock.lastCanvas.elements > 4, #mock.lastCanvas.elements)
+  ExcelAlt.mode, ExcelAlt.seq = false, ""
+end
+
+-- The redraw used to sit behind a boolean latch cleared by an unretained
+-- timer. If that timer was collected before firing, the latch stayed set
+-- and the panel never drew again — while sequences, actions and the
+-- confirmation alert all kept working, because none of them go through
+-- scheduleUI.
+do
+  ExcelAlt.overlayOn.excel = true
+  mock.activate(mock.EXCEL)
+  for i = 1, 5 do
+    ExcelAlt.mode, ExcelAlt.seq = false, ""
+    mock.lastCanvas = nil
+    tapOption()
+    typeKeys("h")
+    mock.flushTimers(0.1)
+    if mock.lastCanvas == nil then break end
+  end
+  check("the panel still draws after repeated sequences",
+    mock.lastCanvas ~= nil and mock.lastCanvas.frame.w == 340)
   ExcelAlt.mode, ExcelAlt.seq = false, ""
 end
 

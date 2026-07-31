@@ -692,7 +692,10 @@ local function overlayShow()
   overlayHide()
   local appId = ExcelAlt.activeApp
   local host = APP[appId]
-  if not host then return end
+  if not host then
+    pcall(dlog, "overlay skipped: no active host at draw time")
+    return
+  end
   if type(ExcelAlt.overlayOn) ~= "table" then
     -- Older prefs stored a single boolean. Should be migrated at load,
     -- but indexing a boolean here would throw inside the draw and take
@@ -777,7 +780,6 @@ end
 -- scheduleUI() coalesces overlay updates onto the next runloop tick;
 -- say() defers alerts the same way.
 -- ---------------------------------------------------------------------
-local uiScheduled = false
 -- Clear sequence mode without touching the UI. Used on the error paths,
 -- where whatever just failed may well fail again if we redraw.
 local function forceExitMode(why)
@@ -787,11 +789,24 @@ local function forceExitMode(why)
   if why then pcall(dlog, "mode force-exit: " .. why) end
 end
 
+-- Coalesce redraws onto the next runloop tick.
+--
+-- This used to be a boolean latch plus an UNRETAINED hs.timer.doAfter. A
+-- timer with no reference held to it can be collected before it fires,
+-- and when that happened the latch was never cleared: scheduleUI then
+-- returned early forever and the panel never drew again for the rest of
+-- the session. Everything else carried on working — sequences still
+-- matched, actions still ran, the confirmation alert still appeared,
+-- because none of those go through here — so it presented as "shortcuts
+-- work but the KeyTips list never shows".
+--
+-- Replacing the pending timer coalesces just as well and leaves no flag
+-- that can get stuck, and the timer is retained on ExcelAlt so it cannot
+-- be collected out from under us.
 local function scheduleUI()
-  if uiScheduled then return end
-  uiScheduled = true
-  hs.timer.doAfter(0, function()
-    uiScheduled = false
+  if ExcelAlt.uiTimer then pcall(function() ExcelAlt.uiTimer:stop() end) end
+  ExcelAlt.uiTimer = hs.timer.doAfter(0, function()
+    ExcelAlt.uiTimer = nil
     -- This runs on a timer, outside pcall protection. If drawing the
     -- panel throws, the user is left in sequence mode with no panel to
     -- tell them so — and every key they press is being swallowed. Log
