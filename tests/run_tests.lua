@@ -506,40 +506,48 @@ do
 end
 
 -- =====================================================================
-print("\n[13] Sequence mode is always visible, even with the overlay off")
+print("\n[13] The overlay switch is obeyed exactly")
 -- =====================================================================
--- The taps swallow keystrokes whenever mode is on. If nothing is drawn,
--- an accidental ⌥ tap eats the next few characters with no explanation.
 mock.activate(mock.EXCEL)
 do
+  -- Off means nothing is drawn at all.
   ExcelAlt.overlayOn.excel = false
-  mock.lastCanvas = nil
-  tapOption()
-  typeKeys("h")                       -- a prefix: stays in mode
-  mock.flushTimers(0.1)
-  check("overlay off still draws a marker so mode is visible",
-    mock.lastCanvas ~= nil and mock.lastCanvas.visible == true)
-  local compact = mock.lastCanvas
-  check("the marker shows the sequence so far",
-    (function()
-      for _, e in ipairs(compact.elements) do
-        if e.text and tostring(e.text):find("H") then return true end
-      end
-      return false
-    end)())
-  check("the marker is narrow and lists no hints",
-    compact.frame.w == 210 and #compact.elements <= 3, #compact.elements)
   ExcelAlt.mode, ExcelAlt.seq = false, ""
-
-  -- ...and with the overlay on, the full hint list is still drawn
-  ExcelAlt.overlayOn.excel = true
   mock.lastCanvas = nil
   tapOption()
   typeKeys("h")
   mock.flushTimers(0.1)
-  check("overlay on still draws the full panel with hints",
+  check("overlay off draws nothing", mock.lastCanvas == nil)
+  check("...but shortcuts still work with it off", (function()
+    ExcelAlt.mode, ExcelAlt.seq = false, ""
+    mock.log.osascript = {}
+    tapOption() ; typeKeys("hoi") ; mock.flushTimers()
+    return lastScript():find("autofit entire column") ~= nil
+  end)())
+
+  -- On draws the full panel with the hint list.
+  ExcelAlt.overlayOn.excel = true
+  ExcelAlt.mode, ExcelAlt.seq = false, ""
+  mock.lastCanvas = nil
+  tapOption()
+  typeKeys("h")
+  mock.flushTimers(0.1)
+  check("overlay on draws the full panel with hints",
     mock.lastCanvas ~= nil and mock.lastCanvas.frame.w == 340 and
-    #mock.lastCanvas.elements > 4, #mock.lastCanvas.elements)
+    #mock.lastCanvas.elements > 4, mock.lastCanvas and #mock.lastCanvas.elements)
+
+  -- Turning one host off leaves the others drawing.
+  ExcelAlt.overlayOn.excel = false
+  mock.activate(mock.PPT)
+  ExcelAlt.mode, ExcelAlt.seq = false, ""
+  mock.lastCanvas = nil
+  tapOption()
+  typeKeys("h")
+  mock.flushTimers(0.1)
+  check("switching one host's overlay off does not silence the others",
+    mock.lastCanvas ~= nil)
+  ExcelAlt.overlayOn.excel = true
+  mock.activate(mock.EXCEL)
   ExcelAlt.mode, ExcelAlt.seq = false, ""
 end
 

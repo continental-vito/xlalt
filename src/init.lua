@@ -704,25 +704,22 @@ local function overlayShow()
     ExcelAlt.overlayOn = {}
     for _, a in ipairs(APPS) do ExcelAlt.overlayOn[a.id] = on end
   end
-  -- "Overlay off" used to mean drawing nothing at all — while the taps
-  -- carried on swallowing every keystroke. Tap ⌥ by accident and the next
-  -- few characters simply vanished, with no clue why: type "hello" and
-  -- H, HE, HEL are eaten as a candidate sequence before it gives up.
-  -- Expert mode means "spare me the hint list", not "say nothing while
-  -- eating my typing", so a compact marker is always drawn.
-  local compact = ExcelAlt.overlayOn[appId] == false
+  -- Off means off: nothing is drawn at all. A failed sequence still
+  -- reports itself ("No shortcut: ⌥ HEL"), which is what tells you an
+  -- accidental ⌥ tap ate a keystroke or two.
+  if ExcelAlt.overlayOn[appId] == false then
+    pcall(dlog, "overlay off for " .. appId .. " — nothing drawn")
+    return
+  end
   local hints = {}
-  if not compact then
-    for _, item in ipairs(CATALOG[appId] or {}) do
-      if item.seq:sub(1, #ExcelAlt.seq) == ExcelAlt.seq then
-        hints[#hints + 1] = item
-        if #hints == 9 then break end
-      end
+  for _, item in ipairs(CATALOG[appId] or {}) do
+    if item.seq:sub(1, #ExcelAlt.seq) == ExcelAlt.seq then
+      hints[#hints + 1] = item
+      if #hints == 9 then break end
     end
   end
-  local rows = compact and 0 or math.max(#hints, 1)
-  local RH, PAD = 24, 14
-  local W = compact and 210 or 340
+  local rows = math.max(#hints, 1)
+  local W, RH, PAD = 340, 24, 14
   local H = PAD * 2 + 30 + rows * RH
   local scr = hs.screen.mainScreen():frame()
   local c = hs.canvas.new({
@@ -737,15 +734,14 @@ local function overlayShow()
     type = "text",
     text = "⌥  " .. ExcelAlt.seq:upper() .. "▮",
     textSize = 17, textColor = { hex = host.tint },
-    frame = { x = PAD, y = PAD - 2, w = W - PAD * 2 - (compact and 66 or 90), h = 26 } })
+    frame = { x = PAD, y = PAD - 2, w = W - PAD * 2 - 90, h = 26 } })
   -- Which host's set is active: the same letters mean different things in
   -- Excel and Word, so the panel always says which one it is driving.
   c:appendElements({
     type = "text", text = host.label,
     textSize = 11, textColor = { hex = "#7E8A84" }, textAlignment = "right",
-    frame = { x = W - PAD - (compact and 66 or 90), y = PAD + 3,
-              w = compact and 66 or 90, h = 18 } })
-  if not compact and #hints == 0 then
+    frame = { x = W - PAD - 90, y = PAD + 3, w = 90, h = 18 } })
+  if #hints == 0 then
     c:appendElements({ type = "text", text = "no match — Esc to cancel",
       textSize = 13, textColor = { hex = "#999999" },
       frame = { x = PAD, y = PAD + 26, w = W - PAD * 2, h = RH } })
@@ -769,8 +765,8 @@ local function overlayShow()
   -- character already buffered, so the line never appeared and the log
   -- looked as though nothing had been drawn at all.
   pcall(dlog, string.format(
-    "overlay drawn: %s %dx%d at (%d,%d) on screen %dx%d — host=%s seq='%s' hints=%d",
-    compact and "compact" or "full", W, H,
+    "overlay drawn: %dx%d at (%d,%d) on screen %dx%d — host=%s seq='%s' hints=%d",
+    W, H,
     scr.x + (scr.w - W) / 2, scr.y + scr.h - H - 60,
     scr.w, scr.h, appId, ExcelAlt.seq, #hints))
 end

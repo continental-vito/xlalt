@@ -107,6 +107,12 @@ So `SUEnableAutomaticChecks` is **false**, and the engine does its own check: it
 
 When the certificate arrives: re-enable `SUEnableAutomaticChecks` in `build-app.sh` and this becomes redundant.
 
+## The KeyTips panel
+
+Redraws are coalesced onto the next runloop tick by `scheduleUI`, which **stops and replaces** any pending redraw. It must not use a boolean latch cleared by the timer's own callback: an unretained `hs.timer.doAfter` can be collected before it fires, and when that happened the latch stayed set and the panel never drew again for the rest of the session. Nothing else routes through `scheduleUI`, so sequences, actions and the confirmation alert all kept working — it presented as "shortcuts work but the list never appears" and took several rounds to find. The pending timer is retained on `ExcelAlt.uiTimer`.
+
+Each host's overlay switch is obeyed literally: off draws nothing at all. A failed sequence still reports itself (`No shortcut: ⌥ HEL`), which is what tells someone an accidental ⌥ tap consumed a keystroke or two.
+
 ## Diagnosing a shortcut that does nothing
 
 `debug.log` records every sequence that resolves, plus every AppleScript or menu-path failure:
