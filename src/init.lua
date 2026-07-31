@@ -1925,14 +1925,24 @@ local function checkForUpdates(manual)
   end)
 end
 
--- The menu item in the top-left app menu goes through Sparkle, and that
--- is the path that installed updates before v3.2. Drive the same one
--- from the manager so both do the same thing; fall back to the built-in
--- downloader only if the runtime does not expose it.
+-- Sparkle is not used to install.
+--
+-- Its failure has survived every check: the installed bundle and the
+-- update archive both pass `codesign --verify --deep --strict` and both
+-- satisfy their Designated Requirement; the archive's EdDSA signature
+-- verifies against the key in the app; the byte count matches the
+-- appcast; quarantine has been cleared. Sparkle still reports "An error
+-- occurred while running the updater", which is what it says when it
+-- cannot run its own installer helper.
+--
+-- The built-in path below does not need that helper: it downloads with
+-- curl, verifies size and version, and hands the swap to a detached
+-- shell script. So it is used instead. Sparkle's own menu item in the
+-- top-left app menu still exists — it belongs to the runtime and cannot
+-- be removed from here — and it still fails; this is the one to use.
 checkForUpdatesRef = function()
-  local ok = pcall(function() hs.checkForUpdates() end)
-  dlog("update check requested via " .. (ok and "Sparkle" or "built-in downloader"))
-  if not ok then checkForUpdates(true) end
+  dlog("update check requested (built-in updater)")
+  checkForUpdates(true)
 end
 
 local function menubarMenu()

@@ -620,20 +620,25 @@ do
   ExcelAlt.updating = false ; mock.httpResponse = nil
 end
 
-check("the update entry point goes through Sparkle, as it did before v3.2",
+-- Sparkle is deliberately not used to install: its helper fails here for
+-- reasons that survived every check we could make from outside it. The
+-- built-in path does not need that helper.
+check("the update entry point does not go through Sparkle",
   (function()
     mock.log.sparkleChecks = 0 ; mock.sparkleBroken = nil
+    mock.httpResponse = { 404, "" } ; ExcelAlt.updating = false
     T.web({ op = "checkupdates" })
-    return mock.log.sparkleChecks == 1
+    mock.httpResponse = nil ; ExcelAlt.updating = false
+    return mock.log.sparkleChecks == 0
   end)(), tostring(mock.log.sparkleChecks))
 
-check("if the runtime cannot do it, the built-in downloader takes over",
+check("the update entry point fetches the appcast itself",
   (function()
-    mock.sparkleBroken = true ; mock.httpResponse = { 404, "" }
+    mock.httpResponse = { 404, "" }
     local before = #mock.log.http
     ExcelAlt.updating = false
     T.web({ op = "checkupdates" })
-    mock.sparkleBroken = nil ; mock.httpResponse = nil ; ExcelAlt.updating = false
+    mock.httpResponse = nil ; ExcelAlt.updating = false
     return #mock.log.http == before + 1
   end)())
 
