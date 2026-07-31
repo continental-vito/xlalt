@@ -96,16 +96,19 @@ Both apps can therefore be installed at once. They should not be *running* at on
 
 ## Updates
 
-Sparkle is present and its signing is correct — the appcast signature verifies against the key embedded in the app — but it **cannot install** anything here. Applying an update means launching `Sparkle.framework/Updater.app`, a nested helper, and macOS refuses to launch nested helpers inside an ad-hoc-signed, un-notarized bundle. The user gets *"An error occurred while running the updater"* with no way forward. This is not fixable in code; it needs a Developer ID certificate.
+Updates are **manual**. The app does not check, does not notify, and does not update itself. A single menu item, **Download the latest version…**, opens the latest `XL.dmg`; the user drags it over the old copy and re-grants Accessibility.
 
-So `SUEnableAutomaticChecks` is **false**, and the engine does its own check: it fetches the appcast, reads `sparkle:shortVersionString`, compares it numerically against `CFBundleShortVersionString`, and points the user at the releases page. Downloading the DMG always works.
+Sparkle ships with the runtime and cannot be deleted — the binary links against it — but it is switched off in three places, and all three are needed:
 
-- Automatic check runs once, eight seconds after launch. There is no polling loop.
-- A version is announced at most once; `notifiedVersion` is persisted in `prefs.json`.
-- Automatic checks never open a browser. A manual **Check for Updates…** does, because the user asked.
-- Dev builds skip the automatic check entirely.
+| where | what | why |
+|---|---|---|
+| `build/build-app.sh` | `SUEnableAutomaticChecks=false`, `SUFeedURL` and `SUScheduledCheckInterval` deleted | no feed means nothing to check |
+| `build/launcher.c` | same keys cleared in the app's user defaults on every launch | **Info.plist values are only defaults** — a value written to user defaults on an earlier launch overrides the bundle forever after, which is why an installed copy kept checking long after the plist said not to |
+| `src/init.lua` | `hs.automaticallyCheckForUpdates(false)` | the runtime runs its own Sparkle check at launch |
 
-When the certificate arrives: re-enable `SUEnableAutomaticChecks` in `build-app.sh` and this becomes redundant.
+The reason for all of it: Sparkle can download and verify an update and then cannot install one. Applying it launches `Sparkle.framework/Updater.app`, and macOS refuses to launch a nested helper inside an ad-hoc-signed, un-notarized bundle. Every check ended at *"An error occurred while running the updater"*.
+
+`SUPublicEDKey` is left in place, and `release.yml` still signs `ExcelAlt-update.zip` and publishes `appcast.xml`, so re-enabling in-app updates once a Developer ID certificate exists is a small change rather than a rebuild.
 
 ## The KeyTips panel
 

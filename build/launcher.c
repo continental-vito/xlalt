@@ -36,6 +36,29 @@ int main(void) {
   CFPreferencesSetAppValue(CFSTR("MJConfigFile"), cfgs, kCFPreferencesCurrentApplication);
   CFRelease(cfgs);
 
+  /* Silence Sparkle at the only level that actually wins.
+   *
+   * SUEnableAutomaticChecks in Info.plist is only a DEFAULT: once a value
+   * has been written to this app's user defaults — which happens the
+   * first time Sparkle runs — that value overrides the bundle every
+   * launch afterwards. So an installed copy kept checking for updates
+   * long after the plist said not to, and every check ended at "An error
+   * occurred while running the updater", because applying an update means
+   * launching Sparkle's nested Updater.app and macOS refuses to do that
+   * inside an ad-hoc-signed, un-notarized bundle.
+   *
+   * Clearing SUFeedURL as well leaves nothing to check even if something
+   * does trigger one. All of this becomes unnecessary with a Developer ID
+   * certificate, at which point Sparkle can be turned back on. */
+  CFPreferencesSetAppValue(CFSTR("SUEnableAutomaticChecks"), kCFBooleanFalse,
+                           kCFPreferencesCurrentApplication);
+  CFPreferencesSetAppValue(CFSTR("SUAutomaticallyUpdate"), kCFBooleanFalse,
+                           kCFPreferencesCurrentApplication);
+  CFPreferencesSetAppValue(CFSTR("HSAutomaticallyCheckForUpdates"), kCFBooleanFalse,
+                           kCFPreferencesCurrentApplication);
+  CFPreferencesSetAppValue(CFSTR("SUFeedURL"), NULL, kCFPreferencesCurrentApplication);
+  CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication);
+
 
   setb("MJShowMenuIconKey", false);
   setb("MJShowDockIconKey", true);   /* regular app: dock icon + top-left menus */

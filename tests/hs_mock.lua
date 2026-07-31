@@ -284,6 +284,10 @@ hs.processInfo = { resourcePath = "/tmp/xl-test-resources",
                    bundleID = "com.corgianalyst.excel-alt-shortcuts" }
 hs.plist = { read = function(_) return { CFBundleShortVersionString = "9.9" } end }
 -- Tests set M.httpResponse = { status, body } to script the next fetch.
+hs.automaticallyCheckForUpdates = function(on)
+  M.log.autoUpdateChecks = on
+end
+
 hs.http = { asyncGet = function(url, _, cb)
   M.log.http = M.log.http or {}
   M.log.http[#M.log.http + 1] = url

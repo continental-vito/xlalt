@@ -29,8 +29,6 @@
 -- Global state table FIRST (v8 crash fix: never index before init)
 ExcelAlt = {
   version    = "dev",   -- replaced at startup by the bundle's real version
-  updateAvailable = nil,  -- version string once the appcast reports a newer one
-  notifiedVersion = nil,  -- last version the user was told about
   enabled    = true,
   -- KeyTips panel, per host: an expert on Excel's sequences may still be
   -- learning Word's, so this is not one switch for all three.
@@ -1546,7 +1544,6 @@ local function savePrefs()
     enabled = ExcelAlt.enabled,
     overlayOn = ExcelAlt.overlayOn,
     appEnabled = ExcelAlt.appEnabled,
-    notifiedVersion = ExcelAlt.notifiedVersion,
   })
 end
 
@@ -1719,83 +1716,27 @@ end
 -- Menu bar
 -- ---------------------------------------------------------------------
 -- ---------------------------------------------------------------------
--- Updates
+-- Updates: download and install by hand.
 --
 -- Sparkle can fetch and verify an update but cannot install one here.
--- Applying it means launching Sparkle's nested Updater.app, and macOS
--- refuses to launch a nested helper inside an ad-hoc-signed, un-notarized
--- bundle — the user gets "An error occurred while running the updater"
--- every time, with no way forward. That is not fixable in code; it needs
--- a Developer ID certificate.
+-- Applying it launches Sparkle's nested Updater.app, which macOS refuses
+-- inside an ad-hoc-signed, un-notarized bundle, so the user gets
+-- "An error occurred while running the updater" and no way forward.
+-- That needs a Developer ID certificate, not more code.
 --
--- So the app checks the appcast itself and points the user at the
--- download page, which always works. Sparkle's own scheduled check is
--- switched off in build-app.sh so nobody meets that dialog by surprise.
+-- Until then the app does not check, does not notify, and does not try
+-- to update itself. One menu item opens the latest DMG in the browser;
+-- the user drags it over the old copy. Sparkle is silenced in three
+-- places because Info.plist alone is not enough: those keys are only
+-- defaults, and a value written to user defaults on an earlier launch
+-- overrides them. See build/launcher.c and build/build-app.sh.
 -- ---------------------------------------------------------------------
-local APPCAST_URL = "https://raw.githubusercontent.com/continental-vito/xlalt/main/appcast.xml"
-local RELEASES_URL = "https://github.com/continental-vito/xlalt/releases/latest"
+local DOWNLOAD_URL =
+  "https://github.com/continental-vito/xlalt/releases/latest/download/XL.dmg"
 
--- Compare dotted versions numerically, so 3.10 beats 3.9 (a plain string
--- compare would not) and any "-dev.branch.sha" suffix is ignored.
-local function versionParts(v)
-  local out = {}
-  for n in tostring(v or ""):gmatch("%d+") do out[#out + 1] = tonumber(n) end
-  return out
-end
-
-local function isNewer(candidate, current)
-  local a, b = versionParts(candidate), versionParts(current)
-  if #a == 0 then return false end
-  for i = 1, math.max(#a, #b) do
-    local x, y = a[i] or 0, b[i] or 0
-    if x ~= y then return x > y end
-  end
-  return false
-end
-
-local function appcastVersion(body)
-  if type(body) ~= "string" then return nil end
-  return body:match("<sparkle:shortVersionString>%s*(.-)%s*</sparkle:shortVersionString>")
-end
-
-local function openReleasesPage()
-  hs.execute("open '" .. RELEASES_URL .. "'")
-end
-
--- manual = the user asked, so always report the outcome and go straight
--- to the download. Automatic checks stay quiet unless there is news, and
--- announce any given version only once.
-local function checkForUpdates(manual)
-  if IS_DEV and not manual then return end
-  hs.http.asyncGet(APPCAST_URL, nil, function(status, body)
-    if status ~= 200 then
-      dlog("update check failed: status=" .. tostring(status))
-      if manual then say("Could not reach the update server", 2.5) end
-      return
-    end
-    local latest = appcastVersion(body)
-    if not latest then
-      dlog("update check: could not read a version from the appcast")
-      if manual then say("Could not read the update information", 2.5) end
-      return
-    end
-    if not isNewer(latest, ExcelAlt.version) then
-      dlog("update check: " .. ExcelAlt.version .. " is current (latest " .. latest .. ")")
-      if manual then say("⌥XL " .. ExcelAlt.version .. " is up to date", 2.5) end
-      return
-    end
-    dlog("update check: version " .. latest .. " available")
-    ExcelAlt.updateAvailable = latest
-    if manual then
-      openReleasesPage()
-    elseif ExcelAlt.notifiedVersion ~= latest then
-      -- One notice per version: a nag on every launch would be worse
-      -- than the broken updater it replaces.
-      ExcelAlt.notifiedVersion = latest
-      savePrefs()
-      say("⌥XL " .. latest .. " is available — see the menu", 4)
-    end
-  end)
+local function downloadLatest()
+  dlog("opening the latest DMG for manual install")
+  hs.execute("open '" .. DOWNLOAD_URL .. "'")
 end
 
 local function menubarMenu()
@@ -1830,10 +1771,7 @@ local function menubarMenu()
     { title = "KeyTips overlay…", menu = overlayItems },
     { title = "-" },
     { title = "Shortcut Manager…", fn = openManager },
-    { title = ExcelAlt.updateAvailable
-        and ("Download version " .. ExcelAlt.updateAvailable .. "…")
-        or "Check for Updates…",
-      fn = function() checkForUpdates(true) end },
+    { title = "Download the latest version…", fn = downloadLatest },
     { title = "-" },
     { title = accessOK and "Accessibility: granted"
                         or "Grant Accessibility permission…",
@@ -1925,9 +1863,6 @@ if prefs then
       if prefs.overlayOn[a.id] == false then ExcelAlt.overlayOn[a.id] = false end
     end
   end
-  if type(prefs.notifiedVersion) == "string" then
-    ExcelAlt.notifiedVersion = prefs.notifiedVersion
-  end
   if type(prefs.appEnabled) == "table" then
     for _, a in ipairs(APPS) do
       if prefs.appEnabled[a.id] == false then ExcelAlt.appEnabled[a.id] = false end
@@ -1951,11 +1886,12 @@ do
        "  " .. table.concat(bits, "  "))
 end
 
-syncFrontmost("startup")
+-- Hammerspoon runs its own Sparkle check on launch. Silence it: the
+-- update it would find cannot be installed (see the Updates section), so
+-- all it can produce is an error dialog.
+pcall(function() hs.automaticallyCheckForUpdates(false) end)
 
--- Quiet check a few seconds after launch, once the app has settled.
--- One-shot; there is no polling loop.
-hs.timer.doAfter(8, function() pcall(checkForUpdates, false) end)
+syncFrontmost("startup")
 
 ExcelAlt.watcher = hs.application.watcher.new(onAppEvent)
 ExcelAlt.watcher:start()
@@ -2114,9 +2050,7 @@ ExcelAlt._test = {
   web          = handleWebMessage,
   forceExitMode = forceExitMode,
   safely       = safely,
-  isNewer      = isNewer,
-  appcastVersion = appcastVersion,
-  checkForUpdates = checkForUpdates,
+  downloadLatest = downloadLatest,
   syncFront    = syncFrontmost,
   support      = SUPPORT,
   isDev        = IS_DEV,

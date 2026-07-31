@@ -589,67 +589,21 @@ check("release builds store their data in ExcelAlt/, not a dev directory",
   T.isDev == false and T.support:find("ExcelAlt%-dev") == nil, T.support)
 
 -- =====================================================================
-print("\n[11] Update checking (Sparkle cannot install, so we only notify)")
+print("\n[11] Updates are manual")
 -- =====================================================================
-check("newer versions compare correctly",
-  T.isNewer("3.3", "3.2") and T.isNewer("3.10", "3.9") and T.isNewer("4.0", "3.9"))
-check("same or older versions do not",
-  not T.isNewer("3.2", "3.2") and not T.isNewer("3.1", "3.2") and
-  not T.isNewer("3.9", "3.10"))
-check("a dev suffix does not make a build look newer",
-  not T.isNewer("3.3", "3.3-dev.logo.abc1234") and
-  T.isNewer("3.4", "3.3-dev.logo.abc1234"))
-check("garbage versions never claim to be newer",
-  not T.isNewer("", "3.2") and not T.isNewer(nil, "3.2") and not T.isNewer("beta", "3.2"))
+-- Sparkle cannot install an update in an ad-hoc-signed bundle, so the
+-- app does not check, does not notify, and does not update itself. One
+-- menu item opens the latest DMG; the user installs it by hand.
+check("the runtime's own update check is switched off at startup",
+  mock.log.autoUpdateChecks == false, tostring(mock.log.autoUpdateChecks))
 
-local FEED = [[<?xml version="1.0"?><rss><channel><item>
-<sparkle:version>21</sparkle:version>
-<sparkle:shortVersionString>3.9</sparkle:shortVersionString>
-</item></channel></rss>]]
-check("the version is read out of the appcast", T.appcastVersion(FEED) == "3.9")
-check("a malformed appcast yields nothing",
-  T.appcastVersion("<rss></rss>") == nil and T.appcastVersion(nil) == nil)
-
-ExcelAlt.version = "3.3"
-ExcelAlt.updateAvailable, ExcelAlt.notifiedVersion = nil, nil
 mock.log.executed = {}
-
--- A newer version: notify once, and do NOT open anything unprompted
-mock.httpResponse = { 200, FEED }
-local nAlerts = #mock.log.alerts
-T.checkForUpdates(false) ; mock.flushTimers()
-check("an available update is recorded and announced once",
-  ExcelAlt.updateAvailable == "3.9" and #mock.log.alerts == nAlerts + 1 and
-  (mock.log.alerts[#mock.log.alerts]):find("3.9") ~= nil)
-check("an automatic check never opens a browser by itself",
-  #(mock.log.executed or {}) == 0)
-T.checkForUpdates(false) ; mock.flushTimers()
-check("the same version is not announced twice",
-  #mock.log.alerts == nAlerts + 1, #mock.log.alerts)
-
--- A manual check goes straight to the download page
-T.checkForUpdates(true) ; mock.flushTimers()
-check("a manual check opens the releases page",
-  (mock.log.executed[#mock.log.executed] or ""):find("releases/latest") ~= nil,
+T.downloadLatest()
+check("the download opens the latest DMG",
+  (mock.log.executed[#mock.log.executed] or ""):find("releases/latest/download/XL%.dmg") ~= nil,
   mock.log.executed[#mock.log.executed])
-
--- Already current
-ExcelAlt.version = "3.9"
-ExcelAlt.updateAvailable = nil
-nAlerts = #mock.log.alerts
-T.checkForUpdates(true) ; mock.flushTimers()
-check("being up to date says so and opens nothing",
-  ExcelAlt.updateAvailable == nil and
-  (mock.log.alerts[#mock.log.alerts]):find("up to date") ~= nil)
-
--- The update server being unreachable must be harmless
-mock.httpResponse = { 500, "" }
-ExcelAlt.updateAvailable = nil
-T.checkForUpdates(false) ; mock.flushTimers()
-check("a failed check leaves no update state behind",
-  ExcelAlt.updateAvailable == nil)
-mock.httpResponse = nil
-ExcelAlt.version = "3.3"
+check("nothing is fetched in the background",
+  #(mock.log.http or {}) == 0, #(mock.log.http or {}))
 
 -- =====================================================================
 print("\n[9] Migration from the v1 (Excel-only) shortcuts.json")

@@ -37,24 +37,25 @@ echo "→ Rebranding bundle"
 /usr/libexec/PlistBuddy -c "Delete :LSUIElement" "$APP/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $XL_VERSION" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $XL_BUILD" "$APP/Contents/Info.plist"
-# In-app updates: feed + EdDSA public key (manual "Check for updates")
-if [ -n "${XL_NO_UPDATES:-}" ]; then
-  # Development builds carry no update feed at all: Sparkle then has nothing
-  # to compare against and can never offer to replace a dev build with the
-  # released one.
-  /usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$APP/Contents/Info.plist" 2>/dev/null || true
-else
-  # Sparkle's scheduled check is OFF. It can download and verify an update
-# but not install one: applying it launches Sparkle's nested Updater.app,
-# which macOS refuses inside an ad-hoc-signed, un-notarized bundle, so the
-# user just gets "An error occurred while running the updater". The engine
-# checks the appcast itself and links to the download instead. Turn this
-# back on once a Developer ID certificate exists.
+# Sparkle is switched off in every build.
+#
+# It ships with the runtime and cannot be deleted (the binary links
+# against it), but it is able to download and verify an update and then
+# unable to install one: applying it launches Sparkle's nested
+# Updater.app, and macOS refuses to launch a nested helper inside an
+# ad-hoc-signed, un-notarized bundle. Every check a user ran therefore
+# ended at "An error occurred while running the updater".
+#
+# Removing SUFeedURL outright leaves nothing to check even if something
+# triggers one. Note that these keys are only DEFAULTS: a value written
+# to the app's user defaults on an earlier launch overrides the bundle,
+# which is why launcher.c clears the same keys on every launch. The
+# public key stays so that re-enabling is a one-line change once a
+# Developer ID certificate exists.
 /usr/libexec/PlistBuddy -c "Set :SUEnableAutomaticChecks false" "$APP/Contents/Info.plist" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool false" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :SUFeedURL https://raw.githubusercontent.com/continental-vito/xlalt/main/appcast.xml" "$APP/Contents/Info.plist" 2>/dev/null || \
-    /usr/libexec/PlistBuddy -c "Add :SUFeedURL string https://raw.githubusercontent.com/continental-vito/xlalt/main/appcast.xml" "$APP/Contents/Info.plist"
-fi
+/usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$APP/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Delete :SUScheduledCheckInterval" "$APP/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBKEY" "$APP/Contents/Info.plist" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $SPARKLE_PUBKEY" "$APP/Contents/Info.plist"
 mv "$APP/Contents/MacOS/Hammerspoon" "$APP/Contents/MacOS/ExcelAltCore"
