@@ -4,7 +4,8 @@
 -- dev, this container) with full recorders so tests can assert on
 -- AppleScript sent, alerts shown, tap start/stop state, timers, etc.
 
-local M = { log = { osascript = {}, alerts = {}, keystrokes = {}, menuClicks = {} } }
+local M = { log = { osascript = {}, alerts = {}, keystrokes = {}, menuClicks = {},
+                    tasks = {}, dialogs = {}, executed = {} } }
 
 -- ------------------------------------------------------------------ json
 local json = {}
@@ -149,8 +150,9 @@ hs.fs = {
   attributes = function(p)
     local f = io.open(p, "r")
     if not f then return nil end
+    local size = f:seek("end")
     f:close()
-    return { mode = "file" }
+    return { mode = "file", size = size }
   end,
 }
 
@@ -281,12 +283,41 @@ end }
 hs.image = { imageFromPath = function(_) return nil end }
 hs.base64 = { encode = function(s) return "b64" end }
 hs.processInfo = { resourcePath = "/tmp/xl-test-resources",
+                   bundlePath = "/tmp/xl-test-app/ExcelAlt.app",
+                   processID = 4242,
                    bundleID = "com.corgianalyst.excel-alt-shortcuts" }
-hs.plist = { read = function(_) return { CFBundleShortVersionString = "9.9" } end }
+hs.plist = { read = function(path)
+  -- Tests can stub a specific path (an update being unpacked, say);
+  -- everything else is the running bundle.
+  if M.plistFor and M.plistFor[path] then return M.plistFor[path] end
+  return { CFBundleShortVersionString = "9.9" }
+end }
 -- Tests set M.httpResponse = { status, body } to script the next fetch.
 hs.automaticallyCheckForUpdates = function(on)
   M.log.autoUpdateChecks = on
 end
+
+-- Subprocesses: tests script the outcome with M.taskResult[bin] and read
+-- back what was actually run.
+hs.task = { new = function(bin, done, args)
+  local t = { bin = bin, args = args }
+  function t:start()
+    M.log.tasks[#M.log.tasks + 1] = { bin = bin, args = args }
+    local r = M.taskResult and M.taskResult[bin]
+    local code = r and r.code or 0
+    if r and r.before then r.before() end
+    if done then done(code, r and r.out or "", r and r.err or "") end
+    return self
+  end
+  return t
+end }
+
+-- Modal dialogs: tests answer with M.dialogAnswer.
+hs.dialog = { blockAlert = function(msg, info, b1, b2)
+  M.log.dialogs[#M.log.dialogs + 1] = { msg = msg, info = info, buttons = { b1, b2 } }
+  return M.dialogAnswer or b1
+end }
+
 
 hs.http = { asyncGet = function(url, _, cb)
   M.log.http = M.log.http or {}

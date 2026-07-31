@@ -1716,27 +1716,191 @@ end
 -- Menu bar
 -- ---------------------------------------------------------------------
 -- ---------------------------------------------------------------------
--- Updates: download and install by hand.
+-- In-app updates, without Sparkle.
 --
--- Sparkle can fetch and verify an update but cannot install one here.
--- Applying it launches Sparkle's nested Updater.app, which macOS refuses
--- inside an ad-hoc-signed, un-notarized bundle, so the user gets
--- "An error occurred while running the updater" and no way forward.
--- That needs a Developer ID certificate, not more code.
+-- Sparkle installs by launching its nested Updater.app, and macOS refuses
+-- to launch a nested helper inside an ad-hoc-signed, un-notarized bundle,
+-- so every attempt ended at "An error occurred while running the
+-- updater". None of the individual steps are hard, so the app does them
+-- itself:
 --
--- Until then the app does not check, does not notify, and does not try
--- to update itself. One menu item opens the latest DMG in the browser;
--- the user drags it over the old copy. Sparkle is silenced in three
--- places because Info.plist alone is not enough: those keys are only
--- defaults, and a value written to user defaults on an earlier launch
--- overrides them. See build/launcher.c and build/build-app.sh.
+--   1. read the appcast for the latest version and its archive
+--   2. curl the archive to a temp directory. curl rather than the
+--      browser matters: a browser download carries a quarantine flag and
+--      the replacement would meet Gatekeeper on first launch
+--   3. check the byte count against the appcast, and read the version out
+--      of the downloaded bundle, before trusting any of it
+--   4. hand the swap to a detached shell script and quit. A script is not
+--      a nested app bundle, so nothing blocks it from running — this is
+--      the single step Sparkle could not get past
+--   5. the script waits for this process to exit, swaps the bundle with a
+--      rollback if anything fails, and relaunches
 -- ---------------------------------------------------------------------
-local DOWNLOAD_URL =
-  "https://github.com/continental-vito/xlalt/releases/latest/download/XL.dmg"
+local APPCAST_URL = "https://raw.githubusercontent.com/continental-vito/xlalt/main/appcast.xml"
+local RELEASES_URL = "https://github.com/continental-vito/xlalt/releases/latest"
+local UPDATE_DIR = "/tmp/xlalt-update"
 
-local function downloadLatest()
-  dlog("opening the latest DMG for manual install")
-  hs.execute("open '" .. DOWNLOAD_URL .. "'")
+local function versionParts(v)
+  local out = {}
+  for n in tostring(v or ""):gmatch("%d+") do out[#out + 1] = tonumber(n) end
+  return out
+end
+
+-- Numeric, so 3.10 beats 3.9 and a "-dev.branch.sha" suffix is ignored.
+local function isNewer(candidate, current)
+  local a, b = versionParts(candidate), versionParts(current)
+  if #a == 0 then return false end
+  for i = 1, math.max(#a, #b) do
+    local x, y = a[i] or 0, b[i] or 0
+    if x ~= y then return x > y end
+  end
+  return false
+end
+
+local function appcastInfo(body)
+  if type(body) ~= "string" then return nil end
+  local info = {
+    version = body:match("<sparkle:shortVersionString>%s*(.-)%s*</sparkle:shortVersionString>"),
+    url     = body:match('enclosure%s+url="([^"]+)"'),
+    length  = tonumber(body:match('length="(%d+)"') or ""),
+  }
+  if not info.version or not info.url then return nil end
+  return info
+end
+
+local function openReleasesPage() hs.execute("open '" .. RELEASES_URL .. "'") end
+
+local function updateFailed(stage, detail)
+  dlog("update failed at " .. stage .. ": " .. tostring(detail))
+  ExcelAlt.updating = false
+  hs.timer.doAfter(0, function()
+    local go = hs.dialog.blockAlert(APPNAME .. " could not install the update",
+      "It failed while " .. stage .. ".\n\nYou can download it manually instead — "
+      .. "quit " .. APPNAME .. ", then drag the new copy over the old one.",
+      "Open Downloads", "Cancel")
+    if go == "Open Downloads" then openReleasesPage() end
+  end)
+end
+
+-- Runs after this process is gone, so it cannot be part of the app.
+local function writeSwapScript(newApp)
+  local dest = hs.processInfo.bundlePath
+  if not dest or #dest == 0 then return nil end
+  local path = UPDATE_DIR .. "/swap.sh"
+  local f = io.open(path, "w")
+  if not f then return nil end
+  f:write(string.format([[#!/bin/sh
+# Written by %s. Waits for the running copy to exit, swaps the bundle,
+# and relaunches. Keeps the old copy until the new one is in place so a
+# failure leaves a working app behind rather than no app at all.
+PID=%d
+DEST=%q
+NEW=%q
+LOG=%q
+exec >>"$LOG" 2>&1
+echo "--- swap started $(date) ---"
+i=0
+while kill -0 "$PID" 2>/dev/null && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done
+sleep 0.5
+rm -rf "$DEST.old" "$DEST.new"
+/usr/bin/ditto "$NEW" "$DEST.new" || { echo "ditto failed"; /usr/bin/open "$DEST"; exit 1; }
+if mv "$DEST" "$DEST.old"; then
+  if mv "$DEST.new" "$DEST"; then
+    rm -rf "$DEST.old"
+  else
+    echo "swap failed, rolling back"
+    mv "$DEST.old" "$DEST"
+  fi
+else
+  echo "could not move the old bundle aside"
+  rm -rf "$DEST.new"
+fi
+/usr/bin/xattr -dr com.apple.quarantine "$DEST" 2>/dev/null
+echo "relaunching"
+/usr/bin/open "$DEST"
+]], APPNAME, hs.processInfo.processID, dest, newApp, SUPPORT .. "/update.log"))
+  f:close()
+  return path
+end
+
+local function runStep(bin, args, done)
+  local t = hs.task.new(bin, function(code, out, err) done(code == 0, out, err) end, args)
+  ExcelAlt.updateTask = t     -- retained: an unreferenced task can be collected
+  t:start()
+end
+
+local function installDownloaded(info, archive)
+  local size = hs.fs.attributes(archive) and hs.fs.attributes(archive).size or 0
+  if info.length and info.length > 0 and size ~= info.length then
+    return updateFailed("checking the download",
+      "expected " .. info.length .. " bytes, got " .. size)
+  end
+  runStep("/usr/bin/ditto", { "-x", "-k", archive, UPDATE_DIR .. "/new" }, function(ok, _, err)
+    if not ok then return updateFailed("unpacking the download", err) end
+    local newApp = UPDATE_DIR .. "/new/ExcelAlt.app"
+    -- Never swap in something we have not identified.
+    local plist = hs.plist and hs.plist.read(newApp .. "/Contents/Info.plist")
+    local got = plist and plist.CFBundleShortVersionString
+    if plist and got ~= info.version then
+      return updateFailed("checking the download",
+        "archive reports version " .. tostring(got) .. ", expected " .. info.version)
+    end
+    local script = writeSwapScript(newApp)
+    if not script then return updateFailed("preparing the install", "could not write the swap script") end
+    dlog("update: installing " .. info.version .. " over " .. tostring(hs.processInfo.bundlePath))
+    hs.execute("nohup /bin/sh '" .. script .. "' >/dev/null 2>&1 &")
+    hs.timer.doAfter(0.4, function() os.exit() end)
+  end)
+end
+
+local function downloadUpdate(info)
+  hs.execute("rm -rf '" .. UPDATE_DIR .. "' && mkdir -p '" .. UPDATE_DIR .. "'")
+  local archive = UPDATE_DIR .. "/update.zip"
+  say("Downloading " .. APPNAME .. " " .. info.version .. "…", 3)
+  dlog("update: downloading " .. info.url)
+  -- curl, not the browser: a browser download is quarantined and the
+  -- replacement would hit Gatekeeper on its first launch.
+  runStep("/usr/bin/curl", { "-fsSL", "--retry", "2", "-o", archive, info.url },
+    function(ok, _, err)
+      if not ok then return updateFailed("downloading the update", err) end
+      installDownloaded(info, archive)
+    end)
+end
+
+local function checkForUpdates(manual)
+  if ExcelAlt.updating then return end
+  ExcelAlt.updating = true
+  hs.http.asyncGet(APPCAST_URL, nil, function(status, body)
+    local info = status == 200 and appcastInfo(body) or nil
+    if not info then
+      ExcelAlt.updating = false
+      dlog("update check failed: status=" .. tostring(status))
+      if manual then say("Could not reach the update server", 2.5) end
+      return
+    end
+    if not isNewer(info.version, ExcelAlt.version) then
+      ExcelAlt.updating = false
+      dlog("update check: " .. ExcelAlt.version .. " is current (latest " .. info.version .. ")")
+      if manual then say(APPNAME .. " " .. ExcelAlt.version .. " is up to date", 2.5) end
+      return
+    end
+    dlog("update check: " .. info.version .. " available")
+    hs.timer.doAfter(0, function()
+      local answer = hs.dialog.blockAlert(
+        APPNAME .. " " .. info.version .. " is available",
+        "You have " .. ExcelAlt.version .. ". It will download, install and "
+        .. "reopen itself.\n\nmacOS will ask for Accessibility permission again "
+        .. "afterwards — that happens on every update until the app is signed "
+        .. "with a Developer ID certificate.",
+        "Install", "Later")
+      if answer ~= "Install" then
+        ExcelAlt.updating = false
+        dlog("update: postponed by the user")
+        return
+      end
+      downloadUpdate(info)
+    end)
+  end)
 end
 
 local function menubarMenu()
@@ -1771,7 +1935,7 @@ local function menubarMenu()
     { title = "KeyTips overlay…", menu = overlayItems },
     { title = "-" },
     { title = "Shortcut Manager…", fn = openManager },
-    { title = "Download the latest version…", fn = downloadLatest },
+    { title = "Check for Updates…", fn = function() checkForUpdates(true) end },
     { title = "-" },
     { title = accessOK and "Accessibility: granted"
                         or "Grant Accessibility permission…",
@@ -2050,7 +2214,9 @@ ExcelAlt._test = {
   web          = handleWebMessage,
   forceExitMode = forceExitMode,
   safely       = safely,
-  downloadLatest = downloadLatest,
+  isNewer        = isNewer,
+  appcastInfo    = appcastInfo,
+  checkForUpdates = checkForUpdates,
   syncFront    = syncFrontmost,
   support      = SUPPORT,
   isDev        = IS_DEV,

@@ -589,21 +589,95 @@ check("release builds store their data in ExcelAlt/, not a dev directory",
   T.isDev == false and T.support:find("ExcelAlt%-dev") == nil, T.support)
 
 -- =====================================================================
-print("\n[11] Updates are manual")
+print("\n[11] In-app updates: check, download, install")
 -- =====================================================================
--- Sparkle cannot install an update in an ad-hoc-signed bundle, so the
--- app does not check, does not notify, and does not update itself. One
--- menu item opens the latest DMG; the user installs it by hand.
-check("the runtime's own update check is switched off at startup",
+local FEED = [[<?xml version="1.0"?><rss><channel><item>
+<sparkle:shortVersionString>3.9</sparkle:shortVersionString>
+<enclosure url="https://example.test/ExcelAlt-update.zip" length="1234"
+ sparkle:edSignature="sig"/>
+</item></channel></rss>]]
+
+check("the runtime's own Sparkle check is switched off at startup",
   mock.log.autoUpdateChecks == false, tostring(mock.log.autoUpdateChecks))
 
-mock.log.executed = {}
-T.downloadLatest()
-check("the download opens the latest DMG",
-  (mock.log.executed[#mock.log.executed] or ""):find("releases/latest/download/XL%.dmg") ~= nil,
-  mock.log.executed[#mock.log.executed])
-check("nothing is fetched in the background",
-  #(mock.log.http or {}) == 0, #(mock.log.http or {}))
+check("versions compare numerically, not as strings",
+  T.isNewer("3.10", "3.9") and T.isNewer("3.9", "3.8") and
+  not T.isNewer("3.9", "3.9") and not T.isNewer("3.9", "3.10") and
+  not T.isNewer("3.3", "3.3-dev.branch.abc1234"))
+
+do
+  local info = T.appcastInfo(FEED)
+  check("the appcast yields version, archive and length",
+    info.version == "3.9" and info.url:find("ExcelAlt%-update%.zip") and info.length == 1234)
+  check("a malformed appcast yields nothing", T.appcastInfo("<rss/>") == nil)
+end
+
+ExcelAlt.version = "3.3"
+mock.httpResponse = { 200, FEED }
+mock.plistFor = { ["/tmp/xlalt-update/new/ExcelAlt.app/Contents/Info.plist"] =
+  { CFBundleShortVersionString = "3.9" } }
+
+-- Declining leaves everything alone.
+mock.dialogAnswer = "Later"
+mock.log.tasks = {}
+T.checkForUpdates(true) ; mock.flushTimers(0.1)
+check("offering the update asks before doing anything",
+  #mock.log.dialogs > 0 and (mock.log.dialogs[#mock.log.dialogs].msg):find("3.9") ~= nil)
+check("declining downloads nothing", #mock.log.tasks == 0)
+
+-- Accepting downloads with curl, unpacks, and hands over to the script.
+mock.dialogAnswer = "Install"
+mock.log.tasks = {} ; mock.log.executed = {}
+ExcelAlt.updating = false
+mock.taskResult = { ["/usr/bin/curl"] = { code = 0, before = function()
+  local f = io.open("/tmp/xlalt-update/update.zip", "w") ; f:write(string.rep("x", 1234)) ; f:close()
+end } }
+os.execute("mkdir -p /tmp/xlalt-update")
+T.checkForUpdates(true) ; mock.flushTimers(0.1)
+do
+  local bins = {}
+  for _, t in ipairs(mock.log.tasks) do bins[#bins + 1] = t.bin end
+  check("the archive is fetched with curl, not the browser",
+    bins[1] == "/usr/bin/curl", table.concat(bins, ","))
+  check("curl is pointed at the appcast's archive URL",
+    table.concat(mock.log.tasks[1].args, " "):find("ExcelAlt%-update%.zip") ~= nil)
+  check("the archive is unpacked with ditto", bins[2] == "/usr/bin/ditto")
+end
+check("the swap is handed to a detached script",
+  (table.concat(mock.log.executed, " ")):find("nohup /bin/sh") ~= nil,
+  table.concat(mock.log.executed, " "))
+
+do
+  local f = io.open("/tmp/xlalt-update/swap.sh")
+  local sh = f and f:read("*a") or ""
+  if f then f:close() end
+  check("the script waits for this process before touching the bundle",
+    sh:find("kill %-0") ~= nil and sh:find("ditto") ~= nil)
+  check("the script rolls back rather than leaving no app",
+    sh:find('mv "%$DEST.old" "%$DEST"') ~= nil)
+  check("the script clears quarantine and relaunches",
+    sh:find("com.apple.quarantine") ~= nil and sh:find("open") ~= nil)
+end
+
+-- A truncated download must never be installed.
+ExcelAlt.updating = false
+mock.log.tasks = {} ; mock.log.executed = {}
+mock.taskResult = { ["/usr/bin/curl"] = { code = 0, before = function()
+  local f = io.open("/tmp/xlalt-update/update.zip", "w") ; f:write("short") ; f:close()
+end } }
+T.checkForUpdates(true) ; mock.flushTimers(0.1)
+check("a download of the wrong size is refused",
+  (table.concat(mock.log.executed, " ")):find("nohup") == nil)
+
+-- Already current: no dialog, no download.
+mock.flushTimers(0.1)   -- let the previous failure's deferred dialog settle
+ExcelAlt.version = "3.9"
+ExcelAlt.updating = false
+mock.log.tasks = {} ; local nD = #mock.log.dialogs
+T.checkForUpdates(true) ; mock.flushTimers(0.1)
+check("being up to date downloads nothing and asks nothing",
+  #mock.log.tasks == 0 and #mock.log.dialogs == nD)
+ExcelAlt.version = "3.3" ; mock.httpResponse = nil ; ExcelAlt.updating = false
 
 -- =====================================================================
 print("\n[9] Migration from the v1 (Excel-only) shortcuts.json")

@@ -96,19 +96,27 @@ Both apps can therefore be installed at once. They should not be *running* at on
 
 ## Updates
 
-Updates are **manual**. The app does not check, does not notify, and does not update itself. A single menu item, **Download the latest version…**, opens the latest `XL.dmg`; the user drags it over the old copy and re-grants Accessibility.
+**Check for Updates…** downloads and installs, then reopens the app. Sparkle is present but switched off, and the engine does the work itself.
 
-Sparkle ships with the runtime and cannot be deleted — the binary links against it — but it is switched off in three places, and all three are needed:
+Sparkle's only unsolvable step was the install: it applies an update by launching `Sparkle.framework/Updater.app`, and macOS refuses to launch a nested helper inside an ad-hoc-signed, un-notarized bundle. Every attempt ended at *"An error occurred while running the updater"*. Nothing else about updating is hard, so:
+
+1. read `appcast.xml` for the latest version, archive URL and byte count
+2. `curl` the archive to `/tmp/xlalt-update` — **curl, not the browser**: a browser download carries a quarantine flag and the replacement would meet Gatekeeper on first launch
+3. check the byte count against the appcast, and read `CFBundleShortVersionString` out of the unpacked bundle, before trusting it
+4. write a shell script to `/tmp/xlalt-update/swap.sh`, launch it detached, and quit. A script is not a nested app bundle, so nothing blocks it — this is the step Sparkle could not get past
+5. the script waits for the process to exit, swaps the bundle, clears quarantine and relaunches
+
+The swap keeps the old bundle until the new one is in place and rolls back if the move fails, so a failure leaves a working app rather than none. It logs to `update.log` beside `debug.log`.
+
+Sparkle is silenced in three places, and all three are needed:
 
 | where | what | why |
 |---|---|---|
-| `build/build-app.sh` | `SUEnableAutomaticChecks=false`, `SUFeedURL` and `SUScheduledCheckInterval` deleted | no feed means nothing to check |
-| `build/launcher.c` | same keys cleared in the app's user defaults on every launch | **Info.plist values are only defaults** — a value written to user defaults on an earlier launch overrides the bundle forever after, which is why an installed copy kept checking long after the plist said not to |
+| `build/build-app.sh` | `SUEnableAutomaticChecks=false`, `SUFeedURL` deleted | nothing for Sparkle to act on |
+| `build/launcher.c` | the same keys cleared in user defaults every launch | **Info.plist values are only defaults** — a value written to user defaults on an earlier launch overrides the bundle forever after, which is why installed copies kept checking long after the plist said not to |
 | `src/init.lua` | `hs.automaticallyCheckForUpdates(false)` | the runtime runs its own Sparkle check at launch |
 
-The reason for all of it: Sparkle can download and verify an update and then cannot install one. Applying it launches `Sparkle.framework/Updater.app`, and macOS refuses to launch a nested helper inside an ad-hoc-signed, un-notarized bundle. Every check ended at *"An error occurred while running the updater"*.
-
-`SUPublicEDKey` is left in place, and `release.yml` still signs `ExcelAlt-update.zip` and publishes `appcast.xml`, so re-enabling in-app updates once a Developer ID certificate exists is a small change rather than a rebuild.
+`release.yml` still signs `ExcelAlt-update.zip` and publishes the appcast, so the feed the app reads is the same one Sparkle would have used. Accessibility must still be re-granted after each update until a Developer ID certificate exists.
 
 ## The KeyTips panel
 

@@ -46,8 +46,9 @@ echo "→ Rebranding bundle"
 # ad-hoc-signed, un-notarized bundle. Every check a user ran therefore
 # ended at "An error occurred while running the updater".
 #
-# Removing SUFeedURL outright leaves nothing to check even if something
-# triggers one. Note that these keys are only DEFAULTS: a value written
+# The app checks the same appcast and installs updates itself; removing
+# SUFeedURL leaves Sparkle nothing to act on even if something triggers
+# it. Note that these keys are only DEFAULTS: a value written
 # to the app's user defaults on an earlier launch overrides the bundle,
 # which is why launcher.c clears the same keys on every launch. The
 # public key stays so that re-enabling is a one-line change once a
