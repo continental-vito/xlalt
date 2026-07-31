@@ -1015,6 +1015,11 @@ header { background:linear-gradient(180deg,var(--accent2),var(--accent)); color:
    shadow follows the strokes rather than a box, which is what
    drop-shadow does and box-shadow cannot. Two passes: a tight one for
    definition against the green, a softer one for lift. */
+header .right { margin-left:auto; text-align:right; font-size:11.5px; line-height:1.6; }
+header .right .v { opacity:.8; }
+header .right a { display:block; color:#fff; font-weight:600; cursor:pointer;
+  text-decoration:underline; text-underline-offset:2px; }
+header .right a:hover { opacity:.85; }
 header img { width:48px; height:48px; display:block;
   filter: drop-shadow(0 1px 1px rgba(0,0,0,.30))
           drop-shadow(0 2px 5px rgba(0,0,0,.20)); }
@@ -1132,6 +1137,10 @@ nav.tabs button.on { background:var(--paper); color:var(--accent); }
   <img src="CORGI_SRC" alt="">
   <div><h1>⌥XL Shortcut Manager</h1>
     <p id="sub">Tap ⌥ in Excel, then type a sequence. Changes apply instantly.</p></div>
+  <div class="right">
+    <span class="v" id="ver"></span>
+    <a onclick="send({op:'checkupdates'})">Check for updates</a>
+  </div>
 </header>
 <div id="ax">
   <span style="flex:1">Shortcuts are OFF — macOS Accessibility permission is missing.</span>
@@ -1515,6 +1524,7 @@ function setStats(s) {
   }
 }
 
+function setVersion(v) { $('ver').textContent = '⌥XL ' + v; }
 function setStatus(ok) { $('ax').style.display = ok ? 'none' : 'flex'; }
 send({ op: 'load' });
 </script></body></html>
@@ -1536,6 +1546,7 @@ local function pushCatalog()
   ExcelAlt.manager:evaluateJavaScript("render(" .. hs.json.encode(payload) .. ")")
   ExcelAlt.manager:evaluateJavaScript("setStatus(" .. tostring(hs.accessibilityState() == true) .. ")")
   ExcelAlt.manager:evaluateJavaScript("setTutorial(" .. hs.json.encode(TUTORIAL) .. ")")
+  ExcelAlt.manager:evaluateJavaScript("setVersion(" .. hs.json.encode(ExcelAlt.version) .. ")")
 end
 pushCatalogRef = pushCatalog
 
@@ -1631,6 +1642,9 @@ end
 -- callback so the test suite can drive it directly: this is where the
 -- per-host switches live, and an untested switch is how a bug like
 -- "turning Excel off silences Word" reaches the user.
+-- The updater is defined further down; the manager needs to reach it.
+local checkForUpdatesRef = function() end
+
 local function handleWebMessage(b)
   if type(b) ~= "table" then return end
     if b.op == "load" then pushCatalog()
@@ -1655,6 +1669,8 @@ local function handleWebMessage(b)
         updateTaps()
         pcall(pushCatalogRef)   -- so the page's warning banner matches
       end
+    elseif b.op == "checkupdates" then
+      checkForUpdatesRef()
     elseif b.op == "axsettings" then
       hs.execute("open 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'")
     elseif b.op == "delete" then
@@ -1902,6 +1918,8 @@ local function checkForUpdates(manual)
     end)
   end)
 end
+
+checkForUpdatesRef = function() checkForUpdates(true) end
 
 local function menubarMenu()
   local accessOK = hs.accessibilityState()

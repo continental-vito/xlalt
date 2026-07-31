@@ -96,7 +96,9 @@ Both apps can therefore be installed at once. They should not be *running* at on
 
 ## Updates
 
-**Check for Updates…** downloads and installs, then reopens the app. Sparkle is present but switched off, and the engine does the work itself.
+**Check for updates** lives in the Shortcut Manager header, beside the version. It downloads and installs, then reopens the app.
+
+It is in the window rather than only the menu bar because the menu bar status item never lays out on this app (known issue: macOS reports it at zero height), so the menu is not a dependable entry point. The runtime's *own* Check for Updates, in the top-left app menu, goes to Sparkle and cannot install anything here — with `SUFeedURL` removed it now reports a missing feed rather than failing later at the install step.
 
 Sparkle's only unsolvable step was the install: it applies an update by launching `Sparkle.framework/Updater.app`, and macOS refuses to launch a nested helper inside an ad-hoc-signed, un-notarized bundle. Every attempt ended at *"An error occurred while running the updater"*. Nothing else about updating is hard, so:
 

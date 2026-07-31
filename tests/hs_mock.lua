@@ -5,7 +5,7 @@
 -- AppleScript sent, alerts shown, tap start/stop state, timers, etc.
 
 local M = { log = { osascript = {}, alerts = {}, keystrokes = {}, menuClicks = {},
-                    tasks = {}, dialogs = {}, executed = {} } }
+                    tasks = {}, dialogs = {}, executed = {}, http = {} } }
 
 -- ------------------------------------------------------------------ json
 local json = {}

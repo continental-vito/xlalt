@@ -157,6 +157,22 @@ check('a re-render keeps the current tab and does not rebuild the chrome',
 check('a re-render preserves what the user typed in the search box',
   d.getElementById('search-excel').value === 'paste');
 
+// --------------------------------------------------------------- updates
+// The menu bar item does not appear on this app (macOS lays the status
+// item out at zero height), so the manager window is the only reliable
+// way to reach the updater. The runtime's own Check for Updates goes to
+// Sparkle, which cannot install here.
+check('the header offers a way to check for updates',
+  !!d.querySelector('header .right a') &&
+  /check for updates/i.test(d.querySelector('header .right a').textContent));
+d.querySelector('header .right a').click();
+check('the update link reaches the engine',
+  sent.some(m => m.op === 'checkupdates'), JSON.stringify(sent[sent.length - 1]));
+w.setVersion('3.6');
+check('the running version is shown beside it',
+  d.getElementById('ver').textContent.includes('3.6'),
+  d.getElementById('ver').textContent);
+
 // -------------------------------------------------------------- overlay
 check('the overlay switch reflects each host independently',
   d.getElementById('ovl-excel').checked === true &&

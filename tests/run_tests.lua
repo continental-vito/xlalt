@@ -597,6 +597,20 @@ local FEED = [[<?xml version="1.0"?><rss><channel><item>
  sparkle:edSignature="sig"/>
 </item></channel></rss>]]
 
+-- The menu bar item never lays out on this app, so the manager window is
+-- the only dependable entry point to the updater.
+do
+  ExcelAlt.version = "9.9" ; ExcelAlt.updating = false
+  mock.httpResponse = { 404, "" }
+  local before = #mock.log.http
+  T.web({ op = "checkupdates" })
+  check("the manager's update link runs a real check",
+    #mock.log.http == before + 1 and
+    (mock.log.http[#mock.log.http]):find("appcast%.xml") ~= nil,
+    mock.log.http[#mock.log.http])
+  ExcelAlt.updating = false ; mock.httpResponse = nil
+end
+
 check("the runtime's own Sparkle check is switched off at startup",
   mock.log.autoUpdateChecks == false, tostring(mock.log.autoUpdateChecks))
 
