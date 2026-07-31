@@ -693,6 +693,14 @@ local function overlayShow()
   local appId = ExcelAlt.activeApp
   local host = APP[appId]
   if not host then return end
+  if type(ExcelAlt.overlayOn) ~= "table" then
+    -- Older prefs stored a single boolean. Should be migrated at load,
+    -- but indexing a boolean here would throw inside the draw and take
+    -- the keyboard down with it.
+    local on = ExcelAlt.overlayOn ~= false
+    ExcelAlt.overlayOn = {}
+    for _, a in ipairs(APPS) do ExcelAlt.overlayOn[a.id] = on end
+  end
   if ExcelAlt.overlayOn[appId] == false then return end
   local hints = {}
   for _, item in ipairs(CATALOG[appId] or {}) do
@@ -751,12 +759,32 @@ end
 -- say() defers alerts the same way.
 -- ---------------------------------------------------------------------
 local uiScheduled = false
+-- Clear sequence mode without touching the UI. Used on the error paths,
+-- where whatever just failed may well fail again if we redraw.
+local function forceExitMode(why)
+  ExcelAlt.mode, ExcelAlt.seq = false, ""
+  if ExcelAlt.timeout then pcall(function() ExcelAlt.timeout:stop() end) end
+  ExcelAlt.timeout = nil
+  if why then pcall(dlog, "mode force-exit: " .. why) end
+end
+
 local function scheduleUI()
   if uiScheduled then return end
   uiScheduled = true
   hs.timer.doAfter(0, function()
     uiScheduled = false
-    if ExcelAlt.mode then overlayShow() else overlayHide() end
+    -- This runs on a timer, outside pcall protection. If drawing the
+    -- panel throws, the user is left in sequence mode with no panel to
+    -- tell them so — and every key they press is being swallowed. Log
+    -- it, drop the panel, and leave the mode.
+    local ok, err = pcall(function()
+      if ExcelAlt.mode then overlayShow() else overlayHide() end
+    end)
+    if not ok then
+      pcall(dlog, "overlay draw failed: " .. tostring(err))
+      pcall(overlayHide)
+      forceExitMode("overlay draw failed")
+    end
   end)
 end
 
@@ -825,7 +853,9 @@ local function handleKey(e)
   if hit then
     local fired = ExcelAlt.seq
     exitMode()
-    if ExcelAlt.overlayOn[appId] ~= false then say(hit.desc, 0.8) end  -- expert mode: silent
+    if type(ExcelAlt.overlayOn) == "table" and ExcelAlt.overlayOn[appId] ~= false then
+      say(hit.desc, 0.8)   -- expert mode: silent success
+    end
     -- Keystroke actions cannot report failure the way AppleScript can, so
     -- the log records every sequence that resolved. A shortcut that "does
     -- nothing" is then two distinguishable cases: no line at all (the
@@ -853,6 +883,11 @@ local function safely(fn)
   return function(e)
     local ok, swallow = pcall(fn, e)
     if ok then return swallow end
+    -- A fault must never leave sequence mode latched on. While mode is
+    -- true every keystroke is swallowed, so an error in here reaches the
+    -- user as a dead keyboard in that app, with no way out but quitting.
+    pcall(forceExitMode, "tap handler error: " .. tostring(swallow))
+    pcall(overlayHide)
     return false
   end
 end
@@ -2021,6 +2056,8 @@ ExcelAlt._test = {
   opDelete     = opDelete,
   savePrefs    = savePrefs,
   web          = handleWebMessage,
+  forceExitMode = forceExitMode,
+  safely       = safely,
   isNewer      = isNewer,
   appcastVersion = appcastVersion,
   checkForUpdates = checkForUpdates,

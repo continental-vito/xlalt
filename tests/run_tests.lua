@@ -465,6 +465,47 @@ for _, a in ipairs(T.apps) do
 end
 
 -- =====================================================================
+print("\n[12] A fault must never latch the keyboard shut")
+-- =====================================================================
+-- While ExcelAlt.mode is true every keystroke is swallowed. Anything that
+-- throws while mode is on therefore reaches the user as a dead keyboard,
+-- which is the worst failure this app can have.
+mock.activate(mock.EXCEL)
+do
+  local boom = T.safely(function() error("simulated fault") end)
+  ExcelAlt.mode, ExcelAlt.seq = true, "hv"
+  local swallowed = boom({})
+  check("a throwing handler does not swallow the key", swallowed == false)
+  check("a throwing handler clears sequence mode",
+    ExcelAlt.mode == false and ExcelAlt.seq == "")
+end
+
+-- The same guarantee when the overlay itself is what fails: that path
+-- runs on a timer, outside the tap's pcall.
+do
+  local realCanvas = mock.hs.canvas.new
+  mock.hs.canvas.new = function() error("simulated canvas failure") end
+  tapOption()
+  typeKeys("h")                 -- a prefix: stays in mode, asks to draw
+  mock.flushTimers()
+  check("a failed overlay draw does not leave the user in sequence mode",
+    ExcelAlt.mode == false, tostring(ExcelAlt.mode))
+  mock.hs.canvas.new = realCanvas
+end
+
+-- And an old single-boolean overlay preference must not throw when the
+-- per-host lookup indexes it.
+do
+  ExcelAlt.overlayOn = true          -- as an ancient prefs.json would leave it
+  tapOption()
+  typeKeys("h")
+  mock.flushTimers()
+  check("a legacy boolean overlay preference is repaired, not fatal",
+    type(ExcelAlt.overlayOn) == "table" and ExcelAlt.overlayOn.excel == true)
+  ExcelAlt.mode, ExcelAlt.seq = false, ""
+end
+
+-- =====================================================================
 print("\n[7] Deferred-UI invariant (guards the v12 fix)")
 -- =====================================================================
 check("zero canvas/alert/screen calls ever executed inside a tap callback",
