@@ -761,6 +761,17 @@ local function overlayShow()
   c:level(hs.canvas.windowLevels.overlay)
   c:show()
   ExcelAlt.overlay = c
+  -- Logged once per ⌥ tap, not per keystroke. If the panel is invisible
+  -- this says whether it was drawn at all and, if it was, where — an
+  -- off-screen or zero-sized frame looks identical to "nothing happened"
+  -- from the user's side, and the menu bar item already fails that way.
+  if #ExcelAlt.seq == 0 then
+    pcall(dlog, string.format(
+      "overlay drawn: %s %dx%d at (%d,%d) on screen %dx%d — host=%s hints=%d",
+      compact and "compact" or "full", W, H,
+      scr.x + (scr.w - W) / 2, scr.y + scr.h - H - 60,
+      scr.w, scr.h, appId, #hints))
+  end
 end
 
 -- ---------------------------------------------------------------------
