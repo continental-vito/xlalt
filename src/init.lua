@@ -1,5 +1,5 @@
 -- =====================================================================
---  ⌥XL — Windows-style Alt shortcuts for Excel on Mac
+--  CobAlt — Windows-style Alt shortcuts for Excel, PowerPoint and Word on Mac
 --  Standalone engine (runs inside the rebranded ExcelAlt.app)
 --  v11
 --
@@ -84,7 +84,7 @@ local APPS = {
 -- ---------------------------------------------------------------------
 local TUTORIAL = {
   { title = "Getting started",
-    caption = "Installing ⌥XL, granting Accessibility, and your first sequence.",
+    caption = "Installing CobAlt, granting Accessibility, and your first sequence.",
     url = "" },
   { title = "Sequences in Excel",
     caption = "Tap ⌥, watch the KeyTips panel, and run the built-in Excel shortcuts.",
@@ -110,7 +110,13 @@ BY_BUNDLE["com.microsoft.powerpoint"] = "powerpoint"
 
 local EXCEL   = APP.excel.bundle   -- kept: referenced by startup diagnostics
 local SELF_BUNDLE = (hs.processInfo and hs.processInfo.bundleID) or "com.corgianalyst.excel-alt-shortcuts"
-local APPNAME = "⌥XL"
+-- Display name only. The bundle identifier, the bundle's filename on
+-- disk (ExcelAlt.app), the executable, the update archive and the data
+-- directory all deliberately keep the old name: Accessibility grants and
+-- Sparkle updates are keyed to the identifier, and renaming the bundle
+-- underneath a running installation is exactly the sort of change that
+-- breaks an update in flight. Those are a separate, deliberate step.
+local APPNAME = "CobAlt"
 local SEQ_TIMEOUT = 4
 
 -- ---------------------------------------------------------------------
@@ -1135,7 +1141,7 @@ nav.tabs button.on { background:var(--paper); color:var(--accent); }
 </style></head><body>
 <header>
   <img src="CORGI_SRC" alt="">
-  <div><h1>⌥XL Shortcut Manager</h1>
+  <div><h1>CobAlt Shortcut Manager</h1>
     <p id="sub">Tap ⌥ in Excel, then type a sequence. Changes apply instantly.</p></div>
   <div class="right">
     <span class="v" id="ver"></span>
@@ -1381,7 +1387,7 @@ function applyTheme(a) {
 // tabs always mean "this is an app's shortcut list".
 const NEUTRAL = { accent: '#5A6169', accent2: '#767D85', accentDark: '#454A50' };
 const SUBTITLE = {
-  help: 'How ⌥XL works, and how to build shortcuts of your own.',
+  help: 'How CobAlt works, and how to build shortcuts of your own.',
   fb: 'Tell me what works and what is missing.',
 };
 
@@ -1524,7 +1530,7 @@ function setStats(s) {
   }
 }
 
-function setVersion(v) { $('ver').textContent = '⌥XL ' + v; }
+function setVersion(v) { $('ver').textContent = 'CobAlt ' + v; }
 function setStatus(ok) { $('ax').style.display = ok ? 'none' : 'flex'; }
 send({ op: 'load' });
 </script></body></html>
@@ -2004,9 +2010,9 @@ local function setupMenubar()
     end
   end
   -- Title is ALWAYS set: if the status item exists, text cannot be
-  -- invisible, so presence/absence of "⌥XL" in the menu bar is a
+  -- invisible, so presence/absence of the title in the menu bar is a
   -- definitive diagnostic (icon-only could hide via rendering issues).
-  ExcelAlt.bar:setTitle("⌥XL")
+  ExcelAlt.bar:setTitle(APPNAME)
   ExcelAlt.bar:setTooltip(APPNAME .. " — Alt shortcuts for Excel, PowerPoint & Word")
   ExcelAlt.bar:setMenu(menubarMenu)
   dlog("menubar: item created; icon=" .. tostring(ExcelAlt.barIcon ~= nil))
@@ -2137,7 +2143,7 @@ pcall(openManager)
 hs.timer.doAfter(2, setupMenubar)
 hs.timer.doAfter(6, setupMenubar)
 -- Last resort at +12s: if macOS still refuses to show the item, rebuild it
--- as text-only ("⌥XL"), the most primitive form a status item can take.
+-- as text-only, the most primitive form a status item can take.
 hs.timer.doAfter(12, function()
   local ok, inBar = pcall(function() return ExcelAlt.bar and ExcelAlt.bar:isInMenuBar() end)
   if not (ok and inBar == true) then
@@ -2145,7 +2151,7 @@ hs.timer.doAfter(12, function()
     pcall(function() ExcelAlt.bar:delete() end)
     ExcelAlt.bar = hs.menubar.new()
     if ExcelAlt.bar then
-      ExcelAlt.bar:setTitle("⌥XL")
+      ExcelAlt.bar:setTitle(APPNAME)
       ExcelAlt.bar:setMenu(menubarMenu)
     end
   end

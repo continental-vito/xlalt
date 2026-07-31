@@ -2,7 +2,7 @@
 
 <img src="docs/icon.png" width="128" alt="XL">
 
-# ⌥XL
+# CobAlt
 
 **Windows Alt shortcuts for Excel, PowerPoint and Word on Mac.**
 
@@ -24,7 +24,7 @@ Tap the **⌥ Option** key, then type the sequence you already know from Windows
 
 ## Why
 
-Office's ribbon shortcuts are muscle memory for anyone who learned these apps on Windows — and they simply don't exist on the Mac. ⌥XL brings them back across **Excel, PowerPoint and Word**: one tap of Option enters sequence mode, a KeyTips panel shows what's available as you type, and the built-in sequences map to real actions in whichever app is in front. Each app keeps its own list, its own colour, and its own on/off switch. Add your own with keystrokes, menu paths, or AppleScript.
+Office's ribbon shortcuts are muscle memory for anyone who learned these apps on Windows — and they simply don't exist on the Mac. CobAlt brings them back across **Excel, PowerPoint and Word**: one tap of Option enters sequence mode, a KeyTips panel shows what's available as you type, and the built-in sequences map to real actions in whichever app is in front. Each app keeps its own list, its own colour, and its own on/off switch. Add your own with keystrokes, menu paths, or AppleScript.
 
 ## Install
 

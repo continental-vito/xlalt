@@ -1,5 +1,5 @@
 #!/bin/bash
-# build/build-local.sh — build a development build of ⌥XL and run it on this Mac.
+# build/build-local.sh — build a development build of CobAlt and run it on this Mac.
 #
 #   bash build/build-local.sh                # test → build → install → launch
 #   bash build/build-local.sh --no-launch    # build and install, don't open it
@@ -37,7 +37,7 @@ BACKUPS="$HOME/.xlalt-backups"
 # /Applications is never read from, written to, or replaced.
 export XL_BUNDLE_ID="com.corgianalyst.excel-alt-shortcuts.dev"
 export XL_BUNDLE_NAME="ExcelAlt-dev"
-export XL_DISPLAY_NAME="⌥XL (dev)"
+export XL_DISPLAY_NAME="CobAlt (dev)"
 export XL_NO_UPDATES=1
 export XL_DMG_NAME="XL-dev"
 
@@ -144,19 +144,19 @@ cat <<NOTES
     bundle id   $XL_BUNDLE_ID
     data        ~/Library/Application Support/ExcelAlt-dev/
     log         ~/Library/Application Support/ExcelAlt-dev/debug.log
-  Your released ⌥XL and its shortcuts are untouched.
+  Your released CobAlt and its shortcuts are untouched.
 
-  Quit the released ⌥XL while testing — two engines watching the same app
+  Quit the released CobAlt while testing — two engines watching the same app
   would both fire on every sequence.
 
-  macOS will ask for Accessibility for "⌥XL (dev)" separately. Ad-hoc
+  macOS will ask for Accessibility for "CobAlt (dev)" separately. Ad-hoc
   signing changes the code hash every build, so it may ask again after a
   rebuild; if shortcuts are dead and nothing is asked, re-run --reset-tcc.
 
   If the Dock or Finder still shows an old icon, log out and back in —
   that clears the icon cache without restarting anything by force.
 
-  Done testing: quit ⌥XL (dev) and reopen /Applications/ExcelAlt.app.
+  Done testing: quit CobAlt (dev) and reopen /Applications/ExcelAlt.app.
   To remove the dev build entirely:
     rm -rf "$DEV_APP" "$DEV_SUPPORT" ~/.hammerspoon-xldev
 NOTES

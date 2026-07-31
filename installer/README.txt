@@ -1,4 +1,4 @@
-⌥XL — Windows Alt shortcuts for Excel, PowerPoint and Word on Mac
+CobAlt — Windows Alt shortcuts for Excel, PowerPoint and Word on Mac
 =============================================
 
 INSTALL

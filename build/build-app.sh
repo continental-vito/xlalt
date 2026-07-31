@@ -1,5 +1,5 @@
 #!/bin/bash
-# build/build-app.sh — reproducible ⌥XL build. Run on macOS from repo root:
+# build/build-app.sh — reproducible CobAlt build. Run on macOS from repo root:
 #   bash build/build-app.sh
 # Produces dist/ExcelAlt.app and dist/XL-App.zip
 set -euo pipefail
@@ -13,7 +13,7 @@ HS_URL="https://github.com/Hammerspoon/hammerspoon/releases/download/${HS_VERSIO
 # its own name in the Dock. Unset = the real release identity.
 BID="${XL_BUNDLE_ID:-com.corgianalyst.excel-alt-shortcuts}"
 XL_BUNDLE_NAME="${XL_BUNDLE_NAME:-ExcelAlt}"
-XL_DISPLAY_NAME="${XL_DISPLAY_NAME:-⌥XL}"
+XL_DISPLAY_NAME="${XL_DISPLAY_NAME:-CobAlt}"
 XL_DMG_NAME="${XL_DMG_NAME:-XL}"
 XL_VERSION="${XL_VERSION:-2.5}"
 XL_BUILD="${XL_BUILD:-1}"
@@ -28,7 +28,11 @@ APP="dist/${XL_BUNDLE_NAME}.app"
 
 echo "→ Rebranding bundle"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BID" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleName $XL_BUNDLE_NAME" "$APP/Contents/Info.plist"
+# CFBundleName drives the app menu and the Dock label, so it follows the
+# DISPLAY name. XL_BUNDLE_NAME stays the bundle's filename on disk
+# (ExcelAlt.app) — Sparkle replaces the host bundle in place, and
+# renaming it underneath an installed copy risks the update path.
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $XL_DISPLAY_NAME" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $XL_DISPLAY_NAME" "$APP/Contents/Info.plist" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $XL_DISPLAY_NAME" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable ExcelAlt" "$APP/Contents/Info.plist"

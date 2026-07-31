@@ -162,6 +162,9 @@ check('a re-render preserves what the user typed in the search box',
 // item out at zero height), so the manager window is the only reliable
 // way to reach the updater. The runtime's own Check for Updates goes to
 // Sparkle, which cannot install here.
+check('the window carries the product name',
+  /CobAlt Shortcut Manager/.test(d.querySelector('header h1').textContent),
+  d.querySelector('header h1').textContent);
 check('the header offers a way to check for updates',
   !!d.querySelector('header .right a') &&
   /check for updates/i.test(d.querySelector('header .right a').textContent));
@@ -169,7 +172,8 @@ d.querySelector('header .right a').click();
 check('the update link reaches the engine',
   sent.some(m => m.op === 'checkupdates'), JSON.stringify(sent[sent.length - 1]));
 w.setVersion('3.6');
-check('the running version is shown beside it',
+check('the running version is shown beside it, under the product name',
+  d.getElementById('ver').textContent.includes('CobAlt') &&
   d.getElementById('ver').textContent.includes('3.6'),
   d.getElementById('ver').textContent);
 

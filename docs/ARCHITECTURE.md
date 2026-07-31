@@ -12,6 +12,20 @@ The engine listens to keyboard events through macOS event taps. macOS **holds ke
 
 Version 10 violated rule 2 and froze typing machine-wide; the v11 architecture and test `[1]`/`[2]` groups exist so that can't regress.
 
+## Naming
+
+The app displays as **CobAlt**. Several older names are kept deliberately and should not be "tidied up":
+
+| stays | why |
+|---|---|
+| `com.corgianalyst.excel-alt-shortcuts` | Accessibility grants and Sparkle updates are keyed to the bundle identifier. Changing it drops every existing user's permission and breaks their update path. |
+| `ExcelAlt.app`, `ExcelAltCore` | Sparkle replaces the host bundle in place. Renaming the bundle inside an update archive, while the installed copy has the old name, risks the install. |
+| `~/Library/Application Support/ExcelAlt/` | User data. Moving it needs a migration, not a rename. |
+| `ExcelAlt-update.zip`, `XL.dmg` | `release.yml` uploads these names and the appcast points at them. Existing download links use them. |
+| `ExcelAlt` (the Lua state table) | Internal only. |
+
+Only `APPNAME` in `src/init.lua`, `CFBundleName` and `CFBundleDisplayName` carry the display name. Renaming the bundle on disk is a separate, deliberate change that should be shipped with a manual install rather than through an update.
+
 ## Hosts
 
 Three applications are supported, each with its own shortcut set, its own slice of `shortcuts.json`, its own accent colour in the manager, and its own pair of switches (shortcuts on/off, KeyTips overlay on/off). Nothing about a host is global: someone fluent in Excel's sequences can silence its overlay while still learning Word's. They are declared once in the `APPS` table at the top of `src/init.lua`:

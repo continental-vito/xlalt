@@ -281,6 +281,13 @@ ExcelAlt.overlayOn.excel = true
 -- =====================================================================
 print("\n[6c] Feedback")
 -- =====================================================================
+-- The display name changed to CobAlt; the identifier, the bundle
+-- filename and the data directory deliberately did not, because
+-- Accessibility grants and Sparkle updates are keyed to them.
+check("the data directory keeps the original name",
+  T.support:find("Application Support/ExcelAlt$") ~= nil, T.support)
+check("the bundle identifier is unchanged",
+  mock.hs.processInfo.bundleID == "com.corgianalyst.excel-alt-shortcuts")
 check("version comes from the app bundle, not a hardcoded string",
   ExcelAlt.version == "9.9", ExcelAlt.version)
 do
