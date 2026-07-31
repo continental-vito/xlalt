@@ -110,19 +110,36 @@ Both apps can therefore be installed at once. They should not be *running* at on
 
 ## Updates
 
-**Sparkle is the update path**, as it was up to v3.1. Both entry points — the runtime's *Check for Updates…* in the top-left app menu, and *Check for updates* in the Shortcut Manager header — call `hs.checkForUpdates()`, so they behave identically.
+**Check for updates** in the Shortcut Manager header downloads, installs and relaunches. It does not use Sparkle.
 
-`SUFeedURL` is in `Info.plist` and `release.yml` signs `ExcelAlt-update.zip` and publishes `appcast.xml`. `SUEnableAutomaticChecks` is `false` in `launcher.c`, which predates all of this and is deliberate: checking is manual, installing is Sparkle's job.
+### Why Sparkle cannot do it
 
-### What went wrong, and what is still unknown
+Proven from Sparkle's own log, not inferred:
 
-Updates installed through that menu up to v3.1 and started failing at v3.2 with *"An error occurred while running the updater"*. The build is not the cause — `git diff v3.1 v3.2 -- build/build-app.sh` shows the release identity, the signing and the update archive are produced by identical steps. The only functional difference between those releases is `src/init.lua`.
+```
+OK: EdDSA signature is correct
+Code signature of the new version doesn't match the old version:
+cdhash H"c26014e4aa2a650b1189b53e47701087ec13aa3e".
+Please ensure that old and new app is signed using exactly the same certificate.
+```
 
-I did not find the cause. I concluded Sparkle could not work here at all, switched it off across three files, and wrote a replacement downloader — which removed a path that had been working, and the replacement was then unreachable because its only entry point was the menu bar item that never lays out. All of that is reverted.
+Sparkle requires the new app to satisfy the **old app's designated requirement**. Ad-hoc signing (`codesign --sign -`) has no certificate, so the requirement is a `cdhash` — a hash of that exact build. Every build has a different one, so an ad-hoc-signed app can never satisfy its predecessor's requirement. No configuration changes this. A Developer ID certificate does: every build is signed with the same certificate, the requirement becomes an identity match rather than a hash, and Sparkle works.
 
-The replacement downloader is kept as a **fallback**: if `hs.checkForUpdates()` is unavailable it runs instead, fetching the appcast, verifying the byte count and version, and swapping the bundle via a detached script. `debug.log` records which path ran.
+Note the archive was never the problem. Sparkle verified its EdDSA signature immediately before refusing, and both bundles pass `codesign --verify --deep --strict`.
 
-Anything that touches app termination, the app watcher, or the event taps is a candidate for the v3.2 regression, since Sparkle's installer needs the app to quit and relaunch. Bisecting the v3.1→v3.2 range against a real release is the way to settle it.
+Things eliminated along the way, so nobody repeats them: quarantine on the download, the v3.1→v3.2 build diff (identical), the update archive's transport, and the validity of either signature.
+
+### What the app does instead
+
+1. read `appcast.xml` for the version, archive URL and byte count
+2. `curl` the archive — curl rather than the browser, so it carries no quarantine flag
+3. check the byte count against the appcast and read `CFBundleShortVersionString` out of the unpacked bundle
+4. write a shell script, launch it detached, quit
+5. the script waits for the process to exit, swaps the bundle with a rollback if the move fails, clears quarantine and relaunches
+
+**Known gap:** this verifies HTTPS transport, byte count and version, but not the archive's EdDSA signature — Sparkle did that, and doing it in Lua is not practical. `SUPublicEDKey` and the signed appcast are still published, so this can be tightened later, and the whole path becomes unnecessary once a certificate exists.
+
+Sparkle's own **Check for Updates…** in the top-left app menu still exists and still fails. It belongs to the runtime and cannot be removed from Lua.
 
 ## The KeyTips panel
 
