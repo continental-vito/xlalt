@@ -896,10 +896,23 @@ end
 -- Tap lifecycle: taps exist once, run ONLY when Excel is frontmost,
 -- permission is granted, and shortcuts are enabled.
 -- ---------------------------------------------------------------------
+local lastTapState = nil
 local function updateTaps()
   local appId = ExcelAlt.activeApp
-  local want = ExcelAlt.tapsReady and appId ~= nil and ExcelAlt.enabled
-                 and ExcelAlt.appEnabled[appId] ~= false
+  local hostSwitch = appId == nil or ExcelAlt.appEnabled[appId] ~= false
+  local want = ExcelAlt.tapsReady and appId ~= nil and ExcelAlt.enabled and hostSwitch
+  -- Four independent conditions decide whether ⌥ does anything, and until
+  -- now none of them were visible. "No overlay and no shortcuts in one
+  -- app" has at least four possible causes and the log could not tell
+  -- them apart. Record the decision and the reason whenever it changes.
+  if want ~= lastTapState then
+    lastTapState = want
+    pcall(dlog, string.format(
+      "taps %s — host=%s accessibility=%s global-switch=%s host-switch=%s",
+      want and "ON" or "off", tostring(appId), tostring(ExcelAlt.tapsReady),
+      tostring(ExcelAlt.enabled),
+      appId and tostring(ExcelAlt.appEnabled[appId] ~= false) or "n/a"))
+  end
   if want then
     if not ExcelAlt.flagsTap:isEnabled() then ExcelAlt.flagsTap:start() end
     if not ExcelAlt.keyTap:isEnabled()   then ExcelAlt.keyTap:start()   end
@@ -1895,6 +1908,18 @@ ExcelAlt.flagsTap = hs.eventtap.new({ hs.eventtap.event.types.flagsChanged }, sa
 ExcelAlt.keyTap   = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, safely(handleKey))
 
 -- One-time frontmost check at startup (allowed here: not inside a tap)
+do
+  local bits = {}
+  for _, a in ipairs(APPS) do
+    bits[#bits + 1] = string.format("%s=%s/%s", a.id,
+      ExcelAlt.appEnabled[a.id] ~= false and "on" or "OFF",
+      (type(ExcelAlt.overlayOn) == "table" and ExcelAlt.overlayOn[a.id] ~= false)
+        and "overlay" or "NO-OVERLAY")
+  end
+  dlog("switches: global=" .. (ExcelAlt.enabled and "on" or "OFF") ..
+       "  " .. table.concat(bits, "  "))
+end
+
 syncFrontmost("startup")
 
 -- Quiet check a few seconds after launch, once the app has settled.
