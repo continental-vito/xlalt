@@ -38,6 +38,23 @@ echo "→ Rebranding bundle"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable ExcelAlt" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" "$APP/Contents/Info.plist" 2>/dev/null || true
+
+# Finder, the Dock and ⌘-Tab show the bundle's FILENAME, not
+# CFBundleDisplayName — unless the bundle opts into localized display
+# names. The filename stays ExcelAlt.app on purpose (an update replaces
+# the host bundle in place, and renaming it underneath an installed copy
+# risks the swap), so opt in instead. This is the supported way to show
+# a name that differs from the file on disk.
+/usr/libexec/PlistBuddy -c "Add :LSHasLocalizedDisplayName bool true" "$APP/Contents/Info.plist" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Set :LSHasLocalizedDisplayName true" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDevelopmentRegion en" "$APP/Contents/Info.plist" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Add :CFBundleDevelopmentRegion string en" "$APP/Contents/Info.plist"
+mkdir -p "$APP/Contents/Resources/en.lproj"
+cat > "$APP/Contents/Resources/en.lproj/InfoPlist.strings" <<STRINGS
+/* Shown by Finder, the Dock and the app switcher. */
+CFBundleName = "$XL_DISPLAY_NAME";
+CFBundleDisplayName = "$XL_DISPLAY_NAME";
+STRINGS
 /usr/libexec/PlistBuddy -c "Delete :LSUIElement" "$APP/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $XL_VERSION" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $XL_BUILD" "$APP/Contents/Info.plist"
