@@ -41,17 +41,55 @@ jobs:
           bash build/build-app.sh
           mv dist/ExcelAlt.app "$RUNNER_TEMP/new.app"
 
+      # Everything here asserts. A printed result is worth nothing if the
+      # only thing anyone checks afterwards is whether the tick was green.
       - name: Would the update install?
         run: |
+          set -euo pipefail
+          OLD="$RUNNER_TEMP/old.app" ; NEW="$RUNNER_TEMP/new.app"
+
+          echo "→ both bundles are the real product, not an empty directory"
+          test -x "$OLD/Contents/MacOS/ExcelAltCore"
+          test -x "$NEW/Contents/MacOS/ExcelAltCore"
+          test -x "$NEW/Contents/MacOS/ExcelAlt"
+          test -d "$NEW/Contents/Frameworks/Sparkle.framework"
+          SIZE=$(du -sm "$NEW" | cut -f1)
+          echo "   new.app is ${SIZE}MB"
+          test "$SIZE" -ge 30
+
+          echo "→ the two builds genuinely differ"
+          OH=$(codesign -d -vv "$OLD" 2>&1 | awk -F= '/^CDHash/{print $2}')
+          NH=$(codesign -d -vv "$NEW" 2>&1 | awk -F= '/^CDHash/{print $2}')
+          echo "   old CDHash=$OH"
+          echo "   new CDHash=$NH"
+          test -n "$OH" ; test -n "$NH" ; test "$OH" != "$NH"
+
+          echo "→ neither carries a build-specific requirement"
+          for A in "$OLD" "$NEW"; do
+            DR=$(codesign -d -r- "$A" 2>&1 | grep '^designated')
+            echo "   $DR"
+            echo "$DR" | grep -q 'identifier'
+            echo "$DR" | grep -qv 'cdhash'
+          done
+
           clang -O2 -o "$RUNNER_TEMP/drcheck" build/drcheck.c \
             -framework CoreFoundation -framework Security
-          echo "→ the two builds are genuinely different:"
-          echo "   old $(codesign -d -vv "$RUNNER_TEMP/old.app" 2>&1 | grep -i '^CDHash' || true)"
-          echo "   new $(codesign -d -vv "$RUNNER_TEMP/new.app" 2>&1 | grep -i '^CDHash' || true)"
-          echo "→ Sparkle's check, applied to the real bundles:"
-          "$RUNNER_TEMP/drcheck" "$RUNNER_TEMP/old.app" "$RUNNER_TEMP/new.app"
-          echo "→ and the reverse direction, so it is not an accident of ordering:"
-          "$RUNNER_TEMP/drcheck" "$RUNNER_TEMP/new.app" "$RUNNER_TEMP/old.app"
+
+          echo "→ control: the same two builds, signed the old way, must be REJECTED"
+          cp -R "$OLD" "$RUNNER_TEMP/ctl-old.app"
+          cp -R "$NEW" "$RUNNER_TEMP/ctl-new.app"
+          codesign --force --deep --sign - "$RUNNER_TEMP/ctl-old.app"
+          codesign --force --deep --sign - "$RUNNER_TEMP/ctl-new.app"
+          if "$RUNNER_TEMP/drcheck" "$RUNNER_TEMP/ctl-old.app" "$RUNNER_TEMP/ctl-new.app"; then
+            echo "✗ plain ad-hoc signing passed — the checker is not measuring anything" >&2
+            exit 1
+          fi
+          echo "   ✓ rejected, so the check below means something"
+
+          echo "→ Sparkle's check, on the real bundles"
+          "$RUNNER_TEMP/drcheck" "$OLD" "$NEW"
+          echo "→ and the reverse, so it is not an accident of ordering"
+          "$RUNNER_TEMP/drcheck" "$NEW" "$OLD"
 
       - name: Nested code survived the re-seal
         run: |
