@@ -1,0 +1,59 @@
+name: verify in-place update
+# Builds the real app twice, as two consecutive releases, and checks
+# whether the second would be allowed to replace the first.
+#
+# build/verify-signing.sh proves the signing technique on a minimal
+# bundle in seconds on every push. This proves it on the actual product,
+# with the nested Sparkle framework, XPC services and the compiled
+# launcher in place — the parts a minimal bundle cannot represent.
+#
+# Publishes nothing. Manual dispatch only; run it before tagging a
+# release that changes anything about signing.
+on:
+  workflow_dispatch:
+
+jobs:
+  cross-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build "old" release
+        env:
+          XL_APP_ONLY: "1"
+          XL_VERSION: "9.0"
+        run: |
+          bash build/build-app.sh
+          mv dist/ExcelAlt.app "$RUNNER_TEMP/old.app"
+
+      - name: Build "new" release
+        env:
+          XL_APP_ONLY: "1"
+          XL_VERSION: "9.1"
+        run: |
+          # Change the payload, so the two builds differ the way real
+          # consecutive releases do rather than being reproducible copies.
+          printf '\n-- verify-update: forces a different code hash\n' >> src/init.lua
+          bash build/build-app.sh
+          mv dist/ExcelAlt.app "$RUNNER_TEMP/new.app"
+
+      - name: Would the update install?
+        run: |
+          clang -O2 -o "$RUNNER_TEMP/drcheck" build/drcheck.c \
+            -framework CoreFoundation -framework Security
+          echo "→ the two builds are genuinely different:"
+          echo "   old $(codesign -d -vv "$RUNNER_TEMP/old.app" 2>&1 | grep -i '^CDHash' || true)"
+          echo "   new $(codesign -d -vv "$RUNNER_TEMP/new.app" 2>&1 | grep -i '^CDHash' || true)"
+          echo "→ Sparkle's check, applied to the real bundles:"
+          "$RUNNER_TEMP/drcheck" "$RUNNER_TEMP/old.app" "$RUNNER_TEMP/new.app"
+          echo "→ and the reverse direction, so it is not an accident of ordering:"
+          "$RUNNER_TEMP/drcheck" "$RUNNER_TEMP/new.app" "$RUNNER_TEMP/old.app"
+
+      - name: Nested code survived the re-seal
+        run: |
+          # The top level is re-signed without --deep to keep the explicit
+          # requirement off the nested Sparkle framework. Confirm that did
+          # not leave anything inside unsealed.
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/new.app"
+          codesign --verify --strict \
+            "$RUNNER_TEMP/new.app/Contents/Frameworks/Sparkle.framework"
