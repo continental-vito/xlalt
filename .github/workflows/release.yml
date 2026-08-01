@@ -17,6 +17,37 @@ jobs:
       # Tests run on every push in the ubuntu 'tests' workflow; this job
       # only builds and ships. (A brew/lua install here proved brittle on
       # the macOS runner and failed the v1.4.1 build.)
+      # Everything below is inert until the secrets exist. With no
+      # certificate the build signs ad-hoc exactly as it does today, so
+      # adding this changes nothing until MACOS_CERT_P12 is set.
+      - name: Import Developer ID certificate
+        if: ${{ env.MACOS_CERT_P12 != '' }}
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          set -eu
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          PASS="$(uuidgen)"
+          security create-keychain -p "$PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASS" "$KEYCHAIN"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          # Without this, codesign blocks on a GUI prompt no one can answer
+          # and the job hangs until it times out.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$PASS" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$RUNNER_TEMP/cert.p12"
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" \
+                       | grep "Developer ID Application" | head -1 \
+                       | sed -E 's/.*"(.*)"/\1/')
+          test -n "$IDENTITY"
+          echo "XL_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "imported: $IDENTITY"
+
       - name: Build, sign, and package DMG
         env:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -24,6 +55,40 @@ jobs:
           export XL_VERSION="${TAG#v}"
           export XL_BUILD="${{ github.run_number }}"
           bash build/build-app.sh
+
+      # Notarization is a separate step from signing: Apple has to see the
+      # build. Stapling then writes the result into the bundle so it
+      # validates offline, which matters because the first launch after a
+      # download is exactly when there may be no network.
+      - name: Notarize and staple
+        if: ${{ env.XL_SIGN_IDENTITY != '' && env.NOTARY_KEY != '' }}
+        env:
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          set -eu
+          echo "$NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/key.p8"
+          submit() {
+            xcrun notarytool submit "$1" --wait --timeout 30m \
+              --key "$RUNNER_TEMP/key.p8" \
+              --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID"
+          }
+          # The zip is what Sparkle and the built-in updater download; the
+          # DMG is what a new user downloads. Both need to be notarized,
+          # but only the DMG and the .app can be stapled — a zip cannot
+          # hold a stapled ticket, so the app is stapled before zipping.
+          submit dist/XL-App.zip
+          xcrun stapler staple dist/ExcelAlt.app
+          submit dist/XL.dmg
+          xcrun stapler staple dist/XL.dmg
+          rm -f "$RUNNER_TEMP/key.p8"
+          # Repackage so the shipped archives contain the stapled app.
+          bash build/repackage.sh
+          echo "→ Gatekeeper verdict on the DMG:"
+          spctl -a -t open --context context:primary-signature -vv dist/XL.dmg
+          echo "→ and on the app:"
+          spctl -a -t exec -vv dist/ExcelAlt.app
       - name: Create or update release with DMG
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

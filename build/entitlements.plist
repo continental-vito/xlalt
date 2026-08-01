@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Entitlements for the hardened runtime, required once the app is signed
+  with a Developer ID certificate. Notarization refuses a build without
+  the hardened runtime, and the hardened runtime blocks each of the
+  things below unless they are declared.
+
+  These were read out of the runtime's own shipped code signature rather
+  than guessed (Hammerspoon 1.1.1 is itself notarized, so its set is
+  known-good). Its privacy entitlements for camera, microphone,
+  contacts, calendars, location and photos are dropped here: this app
+  touches none of them, and asking for them would show up in the
+  consent prompts users see.
+
+  Removing any of the remaining four breaks the app in a way that will
+  not appear until it runs on a machine other than the build runner:
+
+  automation.apple-events
+      Every Excel action goes through AppleScript (hs.osascript).
+      Without this, sending an Apple Event fails outright — the whole
+      product stops working.
+
+  cs.disable-library-validation
+      The engine loads its Lua extension modules as separate .so files
+      from Contents/Frameworks/hs. Library validation only permits
+      loading code signed by the same team, and these are signed by
+      whoever built the runtime.
+
+  cs.allow-jit, cs.allow-unsigned-executable-memory
+      The runtime allocates and executes memory at run time. Kept
+      because it ships with them; a crash from removing them would only
+      surface under specific workloads, which is not a good trade for
+      tidiness.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+</dict>
+</plist>

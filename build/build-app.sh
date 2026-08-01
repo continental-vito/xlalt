@@ -90,7 +90,40 @@ mv "$APP/Contents/MacOS/Hammerspoon" "$APP/Contents/MacOS/ExcelAltCore"
 # Native launcher (see build/launcher.c): configures the app's own prefs,
 # then execs the engine. Compiled here so the bundle's main executable is
 # a proper Mach-O, which Gatekeeper accepts unconditionally.
-clang -O2 -o "$APP/Contents/MacOS/ExcelAlt" build/launcher.c -framework CoreFoundation
+# Universal, explicitly.
+#
+# This is the bundle's MAIN executable, so its architectures decide
+# whether the app can launch at all. The engine (ExcelAltCore) ships
+# universal from the runtime, but a bare `clang -O2` builds for the host
+# only — and CI runs on Apple Silicon. That produced an arm64-only
+# launcher inside a bundle that was otherwise perfectly capable of
+# running on Intel, and macOS reported the whole app as incompatible.
+# Nothing in the build noticed, because the build machine could run it.
+clang -O2 -arch arm64 -arch x86_64 \
+  -o "$APP/Contents/MacOS/ExcelAlt" build/launcher.c -framework CoreFoundation
+
+# Assert it, on every build. "It runs here" is not evidence about the
+# architecture it was not built for.
+LAUNCHER_ARCHS="$(lipo -archs "$APP/Contents/MacOS/ExcelAlt")"
+echo "   launcher: $LAUNCHER_ARCHS"
+case "$LAUNCHER_ARCHS" in
+  *arm64*) ;;
+  *) echo "✗ launcher is missing arm64" >&2 ; exit 1 ;;
+esac
+case "$LAUNCHER_ARCHS" in
+  *x86_64*) ;;
+  *) echo "✗ launcher is missing x86_64 — Intel Macs cannot run this" >&2 ; exit 1 ;;
+esac
+# The engine must cover the same ground, or the launcher execs into a
+# binary the machine cannot run.
+CORE_ARCHS="$(lipo -archs "$APP/Contents/MacOS/ExcelAltCore")"
+echo "   engine:   $CORE_ARCHS"
+for A in $LAUNCHER_ARCHS; do
+  case "$CORE_ARCHS" in
+    *"$A"*) ;;
+    *) echo "✗ engine has no $A slice; the launcher would exec into nothing" >&2 ; exit 1 ;;
+  esac
+done
 
 echo "→ Branding the About window"
 # Text only. The About panel already shows the app icon above this
@@ -145,10 +178,51 @@ fi
 [ -f assets/menubar.png ]    && cp assets/menubar.png    "$APP/Contents/Resources/xl-menubar.png"
 [ -f assets/xl-corgi.png ]   && cp assets/xl-corgi.png   "$APP/Contents/Resources/xl-corgi.png"
 
-echo "→ Signing (ad-hoc, with a stable designated requirement)"
-# Sign the Mach-O engine first, then seal the bundle.
-codesign --force --sign - "$APP/Contents/MacOS/ExcelAltCore"
-codesign --force --deep --sign - "$APP"
+if [ -n "${XL_SIGN_IDENTITY:-}" ]; then
+  # ---------------------------------------------------------------
+  # Developer ID build
+  # ---------------------------------------------------------------
+  # Signed inside-out, deliberately, instead of with --deep. --deep
+  # would re-sign the nested Sparkle helpers with OUR entitlements and
+  # strip theirs, which is worse than leaving them alone. Each nested
+  # binary keeps whatever entitlements it already had; only the app
+  # itself gets build/entitlements.plist.
+  echo "→ Signing with Developer ID: $XL_SIGN_IDENTITY"
+  ENT_TMP="$(mktemp -d)"
+  sign_nested() {
+    local target="$1" ent="$ENT_TMP/ent.plist"
+    if codesign -d --entitlements :- "$target" 2>/dev/null > "$ent" && [ -s "$ent" ]; then
+      codesign --force --options runtime --timestamp \
+        --entitlements "$ent" --sign "$XL_SIGN_IDENTITY" "$target"
+    else
+      codesign --force --options runtime --timestamp \
+        --sign "$XL_SIGN_IDENTITY" "$target"
+    fi
+  }
+  # -depth so the innermost code is sealed before whatever contains it.
+  while IFS= read -r nested; do
+    sign_nested "$nested"
+  done < <(find "$APP/Contents" -depth \
+             \( -name "*.app" -o -name "*.xpc" -o -name "*.framework" \
+                -o -name "*.dylib" -o -name "*.so" -o -name "*.bundle" \) 2>/dev/null)
+  sign_nested "$APP/Contents/MacOS/ExcelAltCore"
+  rm -rf "$ENT_TMP"
+
+  # No explicit -r here. A Developer ID signature produces a designated
+  # requirement anchored to the certificate, which is both stronger than
+  # the identifier-only one and still satisfied across builds. The
+  # identifier clause it contains is what lets a machine running an
+  # ad-hoc build (whose requirement is `identifier "<bid>"`) accept this
+  # one as an update.
+  codesign --force --options runtime --timestamp \
+    --entitlements build/entitlements.plist \
+    --sign "$XL_SIGN_IDENTITY" "$APP"
+else
+  echo "→ Signing (ad-hoc, with a stable designated requirement)"
+  # Sign the Mach-O engine first, then seal the bundle.
+  codesign --force --sign - "$APP/Contents/MacOS/ExcelAltCore"
+  codesign --force --deep --sign - "$APP"
+fi
 
 # Then re-seal the top level with an EXPLICIT designated requirement.
 #
@@ -169,8 +243,10 @@ codesign --force --deep --sign - "$APP"
 #
 # --deep is NOT used here: it would push this requirement down onto the
 # nested Sparkle framework, whose identifier is different.
-codesign --force --sign - --identifier "$BID" \
-  -r="designated => identifier \"$BID\"" "$APP"
+if [ -z "${XL_SIGN_IDENTITY:-}" ]; then
+  codesign --force --sign - --identifier "$BID" \
+    -r="designated => identifier \"$BID\"" "$APP"
+fi
 
 # Assert it landed. A silently-synthesised cdhash requirement looks fine
 # to `codesign --verify` and only shows up as a failed update months
@@ -180,9 +256,25 @@ echo "   $DR"
 case "$DR" in
   *cdhash*|"") echo "✗ designated requirement is build-specific — updates would not install" >&2
                exit 1 ;;
+  # Ad-hoc: identifier only. Developer ID: identifier plus a certificate
+  # anchor. Either is stable across builds, which is the property that
+  # matters; a cdhash is not, and is rejected above.
   *"identifier \"$BID\""*) ;;
   *) echo "✗ unexpected designated requirement" >&2 ; exit 1 ;;
 esac
+if [ -n "${XL_SIGN_IDENTITY:-}" ]; then
+  case "$DR" in
+    *"anchor apple generic"*) ;;
+    *) echo "✗ signed with an identity but the requirement has no Apple anchor" >&2
+       exit 1 ;;
+  esac
+  # Notarization rejects anything without the hardened runtime, and the
+  # flag is easy to lose by re-signing one step later.
+  codesign -d -vv "$APP" 2>&1 | grep -q "flags=.*runtime" || {
+    echo "✗ hardened runtime flag is missing — notarization would reject this" >&2
+    exit 1
+  }
+fi
 codesign --verify --deep --strict "$APP"
 
 # Local development builds only need dist/ExcelAlt.app; DMG + archives add
