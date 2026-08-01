@@ -110,9 +110,9 @@ Both apps can therefore be installed at once. They should not be *running* at on
 
 ## Updates
 
-**Check for updates** in the Shortcut Manager header downloads, installs and relaunches. It does not use Sparkle.
+**Check for updates** in the Shortcut Manager header downloads, installs and relaunches without Sparkle. It is the dependable path and the only one that can update a copy installed before v3.10.
 
-### Why Sparkle cannot do it
+### Why Sparkle failed, and what fixed it
 
 Proven from Sparkle's own log, not inferred:
 
@@ -123,9 +123,31 @@ cdhash H"c26014e4aa2a650b1189b53e47701087ec13aa3e".
 Please ensure that old and new app is signed using exactly the same certificate.
 ```
 
-Sparkle requires the new app to satisfy the **old app's designated requirement**. Ad-hoc signing (`codesign --sign -`) has no certificate, so the requirement is a `cdhash` — a hash of that exact build. Every build has a different one, so an ad-hoc-signed app can never satisfy its predecessor's requirement. No configuration changes this. A Developer ID certificate does: every build is signed with the same certificate, the requirement becomes an identity match rather than a hash, and Sparkle works.
+Note what this rules out. The message comes from `Sparkle.framework/Versions/B/Autoupdate`, so the installer helper *ran*; the "macOS refuses to launch a nested helper" theory that was written into `init.lua` for several releases was wrong. And the archive was never at fault — its EdDSA signature verified immediately before the refusal.
 
-Note the archive was never the problem. Sparkle verified its EdDSA signature immediately before refusing, and both bundles pass `codesign --verify --deep --strict`.
+Sparkle's installer takes the **installed** app's designated requirement and checks the download against it. A plain ad-hoc signature carries no explicit requirement, so macOS synthesises one from the code hash: `cdhash H"…"`, pinned to one build and unsatisfiable by any other. The message's advice about certificates is misleading here — the requirement, not the certificate, is what breaks.
+
+The build now signs the top level with an **explicit** requirement:
+
+```sh
+codesign --force --sign - --identifier "$BID" \
+  -r="designated => identifier \"$BID\"" "$APP"
+```
+
+`identifier "…"` is stable across builds and satisfied by any build of this app. `--deep` is deliberately not used, or the requirement would be pushed onto the nested Sparkle framework, whose identifier differs. This is not a security boundary: ad-hoc code has no certificate to anchor to, and the appcast's EdDSA signature is what attests the archive. It exists so the requirement stops being build-specific. A Developer ID certificate replaces it with a real anchor.
+
+**This only helps updates *from* a build that carries the requirement**, since it is the old app's requirement that is consulted. Anything installed before v3.10 still has a `cdhash` requirement and can only be updated by the built-in path below.
+
+### How this is kept honest
+
+The property is invisible to `codesign --verify` and shows up only as an update that will not install, months later — which is exactly how it went unnoticed from v3.2 to v3.9. So it is tested, not assumed:
+
+- `build/drcheck.c` reproduces Autoupdate's check exactly: copy the old bundle's designated requirement, validate the new bundle against it.
+- `build/verify-signing.sh` runs it over two deliberately different builds and **fails if plain ad-hoc signing passes** — a check that succeeds either way proves nothing. CI runs this on macOS on every push.
+- `.github/workflows/verify-update.yml` does the same on two real builds of the product, with the nested framework and compiled launcher in place, including the same negative control. Manual dispatch; run it before tagging anything that touches signing.
+- `build/build-app.sh` asserts the requirement landed and refuses to produce a build whose requirement contains `cdhash`.
+
+Every assertion there is its own workflow step on purpose. GitHub serves job logs from a storage host that is not always reachable, and when it is not, the step name is the only diagnosis available.
 
 Things eliminated along the way, so nobody repeats them: quarantine on the download, the v3.1→v3.2 build diff (identical), the update archive's transport, and the validity of either signature.
 
@@ -139,7 +161,16 @@ Things eliminated along the way, so nobody repeats them: quarantine on the downl
 
 **Known gap:** this verifies HTTPS transport, byte count and version, but not the archive's EdDSA signature — Sparkle did that, and doing it in Lua is not practical. `SUPublicEDKey` and the signed appcast are still published, so this can be tightened later, and the whole path becomes unnecessary once a certificate exists.
 
-Sparkle's own **Check for Updates…** in the top-left app menu still exists and still fails. It belongs to the runtime and cannot be removed from Lua.
+Sparkle's own **Check for Updates…** in the top-left app menu belongs to the runtime and cannot be changed from Lua. From v3.10 it can install, because the requirement it checks is now stable. It stays a manual entry point only: `SUEnableAutomaticChecks` is off, so Sparkle never prompts on its own and there is exactly one automatic path.
+
+### Automatic checks
+
+Reaching an update should not depend on finding a button. The engine checks 20s after launch and every six hours, through the built-in path.
+
+- a version answered "Later" is recorded in `prefs.json` and not raised again on its own; a manual check still offers it
+- nothing is raised while a shortcut sequence is in flight — the dialog takes focus and would swallow the rest of the sequence
+- a failed check is silent; only a manual one reports problems
+- development builds never check. The swap replaces whatever bundle is running, so an automatic update in a dev build would quietly install the release over `ExcelAlt-dev.app`
 
 ## The KeyTips panel
 

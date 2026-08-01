@@ -43,14 +43,18 @@ echo "→ Rebranding bundle"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $XL_BUILD" "$APP/Contents/Info.plist"
 # In-app updates: feed + EdDSA public key.
 #
-# This is deliberately back to the v3.1 configuration. Updates installed
-# through Sparkle before v3.2 and the build has not changed in any way
-# that touches them — the identity, the signing and the update archive
-# are produced by the same steps. Switching Sparkle off was my response
-# to a failure I never actually diagnosed, and it removed a path that
-# had been working.
-/usr/libexec/PlistBuddy -c "Set :SUEnableAutomaticChecks true" "$APP/Contents/Info.plist" 2>/dev/null || \
-  /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool true" "$APP/Contents/Info.plist"
+# The feed and key stay published: from v3.10 the runtime's own
+# Check for Updates… in the top-left app menu can install, because the
+# designated requirement it checks is now stable across builds (see the
+# signing step below).
+#
+# Scheduled checks are OFF, deliberately. The engine runs its own
+# automatic check (20s after launch, then every six hours), and with
+# Sparkle also scheduling one the user would be asked twice about the
+# same version by two different dialogs. Turning this off leaves
+# Sparkle as a manual entry point and exactly one automatic path.
+/usr/libexec/PlistBuddy -c "Set :SUEnableAutomaticChecks false" "$APP/Contents/Info.plist" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool false" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :SUFeedURL https://raw.githubusercontent.com/continental-vito/xlalt/main/appcast.xml" "$APP/Contents/Info.plist" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Add :SUFeedURL string https://raw.githubusercontent.com/continental-vito/xlalt/main/appcast.xml" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBKEY" "$APP/Contents/Info.plist" 2>/dev/null || \
