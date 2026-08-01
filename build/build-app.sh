@@ -88,12 +88,45 @@ fi
 [ -f assets/menubar.png ]    && cp assets/menubar.png    "$APP/Contents/Resources/xl-menubar.png"
 [ -f assets/xl-corgi.png ]   && cp assets/xl-corgi.png   "$APP/Contents/Resources/xl-corgi.png"
 
-echo "→ Signing (ad-hoc)"
-# Sign the Mach-O engine first, then seal the bundle. The bundle's main
-# executable is a shell launcher; its signature lives in extended
-# attributes, which DMG transport preserves (zip does not, reliably).
+echo "→ Signing (ad-hoc, with a stable designated requirement)"
+# Sign the Mach-O engine first, then seal the bundle.
 codesign --force --sign - "$APP/Contents/MacOS/ExcelAltCore"
 codesign --force --deep --sign - "$APP"
+
+# Then re-seal the top level with an EXPLICIT designated requirement.
+#
+# This is what makes an in-place update possible at all. Sparkle's
+# installer helper reads the *installed* app's designated requirement and
+# checks the downloaded app against it. With a plain ad-hoc signature
+# there is no explicit requirement, so macOS synthesises one from the
+# code hash: `cdhash H"c26014e4…"`. That is pinned to a single build, so
+# no subsequent build can ever satisfy it, and the install stops at
+# "Code signature of the new version doesn't match the old version".
+#
+# `identifier "<bundle id>"` is stable across builds and is satisfied by
+# any build of this app. It is deliberately not a security boundary —
+# ad-hoc code has no certificate to anchor to, and the EdDSA signature on
+# the appcast is what attests the archive. It exists so the requirement
+# stops being build-specific. A Developer ID certificate would replace
+# this with a real anchor.
+#
+# --deep is NOT used here: it would push this requirement down onto the
+# nested Sparkle framework, whose identifier is different.
+codesign --force --sign - --identifier "$BID" \
+  -r="designated => identifier \"$BID\"" "$APP"
+
+# Assert it landed. A silently-synthesised cdhash requirement looks fine
+# to `codesign --verify` and only shows up as a failed update months
+# later, which is exactly how this went unnoticed for six releases.
+DR="$(codesign -d -r- "$APP" 2>&1 | grep '^designated' || true)"
+echo "   $DR"
+case "$DR" in
+  *cdhash*|"") echo "✗ designated requirement is build-specific — updates would not install" >&2
+               exit 1 ;;
+  *"identifier \"$BID\""*) ;;
+  *) echo "✗ unexpected designated requirement" >&2 ; exit 1 ;;
+esac
+codesign --verify --deep --strict "$APP"
 
 # Local development builds only need dist/ExcelAlt.app; DMG + archives add
 # ~a minute per iteration and are never used off-CI. See build/build-local.sh.

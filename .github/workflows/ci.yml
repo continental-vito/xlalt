@@ -18,6 +18,18 @@ jobs:
   # three per-host pages. jsdom loads that exact markup and exercises the
   # tabs, theming, forms, and the messages the engine would receive, which
   # the Lua suite cannot see.
+  # In-place updates hinge on one property of the signature: a new build
+  # must satisfy the installed build's designated requirement. It is
+  # invisible to `codesign --verify`, and getting it wrong shows up only
+  # as an update that will not install. Proven here on every push, both
+  # directions, in a few seconds.
+  signing-requirement:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cross-build signature validation
+        run: bash build/verify-signing.sh
+
   manager-ui:
     runs-on: ubuntu-latest
     steps:

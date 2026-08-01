@@ -1561,6 +1561,9 @@ local function savePrefs()
     enabled = ExcelAlt.enabled,
     overlayOn = ExcelAlt.overlayOn,
     appEnabled = ExcelAlt.appEnabled,
+    -- The version the user last answered "Later" to. Automatic checks
+    -- stay quiet about it; a manual check still offers it.
+    skipVersion = ExcelAlt.skipVersion,
   })
 end
 
@@ -1906,6 +1909,13 @@ local function checkForUpdates(manual)
       if manual then say(APPNAME .. " " .. ExcelAlt.version .. " is up to date", 2.5) end
       return
     end
+    -- Asked once, answered "Later": an automatic check must not ask again
+    -- about the same version. Clicking Check for Updates still offers it.
+    if not manual and ExcelAlt.skipVersion == info.version then
+      ExcelAlt.updating = false
+      dlog("update check: " .. info.version .. " available, but the user postponed it")
+      return
+    end
     dlog("update check: " .. info.version .. " available")
     hs.timer.doAfter(0, function()
       local answer = hs.dialog.blockAlert(
@@ -1917,7 +1927,10 @@ local function checkForUpdates(manual)
         "Install", "Later")
       if answer ~= "Install" then
         ExcelAlt.updating = false
-        dlog("update: postponed by the user")
+        ExcelAlt.skipVersion = info.version
+        savePrefs()
+        dlog("update: postponed by the user; " .. info.version
+             .. " will not be offered automatically again")
         return
       end
       downloadUpdate(info)
@@ -1925,24 +1938,77 @@ local function checkForUpdates(manual)
   end)
 end
 
--- Sparkle is not used to install.
+-- Why the app installs updates itself rather than through Sparkle.
 --
--- Its failure has survived every check: the installed bundle and the
--- update archive both pass `codesign --verify --deep --strict` and both
--- satisfy their Designated Requirement; the archive's EdDSA signature
--- verifies against the key in the app; the byte count matches the
--- appcast; quarantine has been cleared. Sparkle still reports "An error
--- occurred while running the updater", which is what it says when it
--- cannot run its own installer helper.
+-- The comment that used to sit here blamed a nested-helper launch
+-- failure. That was wrong, and Sparkle's own log disproves it: the
+-- helper (Sparkle.framework/Versions/B/Autoupdate) clearly ran, because
+-- the error came out of it. What it reported was
 --
--- The built-in path below does not need that helper: it downloads with
--- curl, verifies size and version, and hands the swap to a detached
--- shell script. So it is used instead. Sparkle's own menu item in the
--- top-left app menu still exists — it belongs to the runtime and cannot
--- be removed from here — and it still fails; this is the one to use.
+--   OK: EdDSA signature is correct
+--   Code signature of the new version doesn't match the old version:
+--   cdhash H"c26014e4…"
+--
+-- Autoupdate takes the *installed* app's designated requirement and
+-- checks the downloaded app against it. Ad-hoc signing leaves no
+-- explicit requirement, so macOS synthesises one from the code hash of
+-- that exact build — which no other build can ever satisfy.
+--
+-- build/build-app.sh now signs with an explicit designated requirement
+-- (`identifier "<bundle id>"`), which is stable across builds, and CI
+-- proves the cross-build check passes before anything ships. That
+-- unblocks the runtime's own Check for Updates… menu item — but only
+-- for updates *from* a build that carries the requirement, since it is
+-- the old app's requirement that is consulted. Anything installed
+-- before then still has a cdhash requirement and can only be updated
+-- by the path below.
+--
+-- So this stays as the dependable route: curl the archive, verify size
+-- and version, hand the swap to a detached shell script.
 checkForUpdatesRef = function()
   dlog("update check requested (built-in updater)")
   checkForUpdates(true)
+end
+
+-- ---------------------------------------------------------------------
+-- Automatic checks
+-- ---------------------------------------------------------------------
+-- Reaching an update should not depend on finding a button. The app
+-- checks shortly after launch and every six hours after that. Three
+-- rules keep it from becoming a nuisance:
+--
+--   * a version already answered "Later" is not raised again on its own
+--   * nothing is shown while a shortcut sequence is in flight; the
+--     dialog takes focus and would eat the rest of the sequence
+--   * a failed check is silent — only a manual one reports problems
+--
+-- Development builds never check. The swap replaces whatever bundle is
+-- running, so an automatic update in a dev build would quietly install
+-- the release over ExcelAlt-dev.app and destroy the isolation that
+-- makes dev builds safe to test with.
+local AUTO_FIRST_DELAY = 20        -- seconds after launch
+local AUTO_INTERVAL    = 6 * 3600  -- and every six hours
+
+local function autoCheck()
+  if ExcelAlt.updating then return end
+  if ExcelAlt.mode then
+    -- Retained: an unreferenced doAfter can be collected before it fires.
+    dlog("automatic update check deferred: a sequence is in progress")
+    ExcelAlt.autoRetry = hs.timer.doAfter(60, autoCheck)
+    return
+  end
+  dlog("update check requested (automatic)")
+  checkForUpdates(false)
+end
+
+local function startAutoUpdates()
+  if IS_DEV then
+    dlog("automatic update checks are off in development builds")
+    return
+  end
+  ExcelAlt.autoFirst = hs.timer.doAfter(AUTO_FIRST_DELAY, autoCheck)
+  ExcelAlt.autoTimer = hs.timer.doEvery(AUTO_INTERVAL, autoCheck)
+  dlog("automatic update checks scheduled")
 end
 
 local function menubarMenu()
@@ -2074,6 +2140,7 @@ if prefs then
       if prefs.appEnabled[a.id] == false then ExcelAlt.appEnabled[a.id] = false end
     end
   end
+  if type(prefs.skipVersion) == "string" then ExcelAlt.skipVersion = prefs.skipVersion end
 end
 
 ExcelAlt.flagsTap = hs.eventtap.new({ hs.eventtap.event.types.flagsChanged }, safely(handleFlags))
@@ -2233,6 +2300,10 @@ else
   end)
 end
 
+-- Updates are independent of the Accessibility grant: an app that is
+-- waiting for permission is exactly the one that may need updating.
+startAutoUpdates()
+
 -- ---------------------------------------------------------------------
 -- Test hooks (inert in production; used by tests/run_tests.lua)
 -- ---------------------------------------------------------------------
@@ -2254,6 +2325,8 @@ ExcelAlt._test = {
   isNewer        = isNewer,
   appcastInfo    = appcastInfo,
   checkForUpdates = checkForUpdates,
+  autoCheck      = autoCheck,
+  startAutoUpdates = startAutoUpdates,
   syncFront    = syncFrontmost,
   support      = SUPPORT,
   isDev        = IS_DEV,

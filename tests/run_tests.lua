@@ -721,6 +721,75 @@ check("being up to date downloads nothing and asks nothing",
   #mock.log.tasks == 0 and #mock.log.dialogs == nD)
 ExcelAlt.version = "3.3" ; mock.httpResponse = nil ; ExcelAlt.updating = false
 
+-- ---------------------------------------------------------------------
+-- Automatic checks. The point of these is that the user never has to
+-- find a button; the risk is that they turn into a nag, or fire at the
+-- worst possible moment.
+-- ---------------------------------------------------------------------
+mock.httpResponse = { 200, FEED }
+ExcelAlt.version = "3.3"
+
+-- Declining stores the version, and the next automatic check stays quiet.
+mock.dialogAnswer = "Later"
+ExcelAlt.updating = false ; ExcelAlt.skipVersion = nil
+T.autoCheck() ; mock.flushTimers(0.1)
+check("an automatic check offers an update that is actually newer",
+  ExcelAlt.skipVersion == "3.9")
+
+ExcelAlt.updating = false
+do
+  local nD = #mock.log.dialogs
+  T.autoCheck() ; mock.flushTimers(0.1)
+  check("a version already declined is not raised again automatically",
+    #mock.log.dialogs == nD)
+end
+
+-- ...but asking explicitly still offers it. Someone who clicked Later in
+-- the morning and Check for Updates in the afternoon means the second one.
+ExcelAlt.updating = false
+do
+  local nD = #mock.log.dialogs
+  T.checkForUpdates(true) ; mock.flushTimers(0.1)
+  check("a manual check still offers a version that was declined",
+    #mock.log.dialogs == nD + 1)
+end
+
+-- The dialog takes keyboard focus. Raising it mid-sequence would swallow
+-- the rest of the sequence, which is the class of bug that reads to the
+-- user as "the keyboard stopped working".
+ExcelAlt.updating = false ; ExcelAlt.skipVersion = nil
+ExcelAlt.mode = true
+do
+  local nD, nH = #mock.log.dialogs, #(mock.log.http or {})
+  T.autoCheck()
+  check("a check is not even started while a sequence is in flight",
+    #mock.log.dialogs == nD and #(mock.log.http or {}) == nH)
+  check("the deferred retry is retained, not left to the collector",
+    ExcelAlt.autoRetry ~= nil)
+end
+ExcelAlt.mode = false ; ExcelAlt.updating = false
+
+-- A dev build's bundle is what the swap would replace, so an automatic
+-- update there would quietly install the release over ExcelAlt-dev.app
+-- and destroy the isolation dev builds exist for. The suite runs as a
+-- release build, so the guard is checked at the source level and the
+-- scheduling is checked live.
+do
+  ExcelAlt.autoTimer = nil
+  T.startAutoUpdates()
+  check("a release build schedules a repeating automatic check",
+    ExcelAlt.autoTimer ~= nil and ExcelAlt.autoFirst ~= nil)
+
+  local src = io.open("src/init.lua"):read("*a")
+  local body = src:match("local function startAutoUpdates%(%)(.-)\nend")
+  check("automatic checks are guarded off in development builds",
+    body ~= nil and body:find("IS_DEV") ~= nil and body:find("return") ~= nil,
+    tostring(body))
+end
+
+ExcelAlt.version = "3.3" ; mock.httpResponse = nil
+ExcelAlt.updating = false ; ExcelAlt.skipVersion = nil
+
 -- =====================================================================
 print("\n[9] Migration from the v1 (Excel-only) shortcuts.json")
 -- =====================================================================
