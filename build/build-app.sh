@@ -87,11 +87,37 @@ rm -f "$APP/Contents/Resources/Credits.rtf" 2>/dev/null || true
 iconv -f UTF-8 -t UTF-8 "$APP/Contents/Resources/Credits.html" >/dev/null
 
 echo "→ De-branding engine UI resources"
-# First-run windows (e.g. the Accessibility prompt) come from the engine's
-# nib/strings resources. Length-preserving rename keeps binary plists valid:
-# "Hammerspoon" (11 chars) -> "ExcelAlt XL" (11 chars).
-find "$APP/Contents/Resources" \( -name "*.nib" -o -name "*.strings" \) -print0 | \
-  xargs -0 perl -pi -e 's/Hammerspoon/ExcelAlt XL/g' 2>/dev/null || true
+# The application menu, the About/Hide/Quit items and the window titles
+# are baked into the runtime's compiled nibs; nothing substitutes them at
+# runtime. build/rename-nib.py parses the NIBArchive and rewrites the
+# display strings.
+#
+# This replaced a length-preserving `perl -pi -e s/Hammerspoon/…/`, which
+# had two faults. It forced the product name to be exactly 11 characters
+# — the only reason the menu ever read "ExcelAlt XL" while the Dock read
+# "CobAlt". And it rewrote the *selector* `quitHammerspoon:` along with
+# the display strings, leaving Quit wired to a method no class
+# implements, which is why Quit did nothing from v1 onward.
+for nib in "$APP"/Contents/Resources/*.nib; do
+  python3 build/rename-nib.py "$nib" "Hammerspoon" "$XL_DISPLAY_NAME"
+done
+
+# Assert the outcome rather than trusting the loop. A nib that silently
+# failed to rewrite ships an app menu that still says Hammerspoon, and a
+# nib that rewrote too much ships dead menu items.
+LEFT=$(strings -a "$APP/Contents/Resources/MainMenu.nib" | grep -c '^Hammerspoon$\|^About Hammerspoon$\|^Quit Hammerspoon$' || true)
+if [ "$LEFT" != "0" ]; then
+  echo "✗ MainMenu.nib still carries the engine name in $LEFT display string(s)" >&2
+  exit 1
+fi
+if ! strings -a "$APP/Contents/Resources/MainMenu.nib" | grep -qx "quitHammerspoon:"; then
+  echo "✗ the quit selector was rewritten — Quit would do nothing" >&2
+  exit 1
+fi
+if ! strings -a "$APP/Contents/Resources/MainMenu.nib" | grep -qx "Quit $XL_DISPLAY_NAME"; then
+  echo "✗ the Quit item was not renamed to $XL_DISPLAY_NAME" >&2
+  exit 1
+fi
 
 echo "→ Embedding engine config and assets"
 cp src/init.lua "$APP/Contents/Resources/init.lua"

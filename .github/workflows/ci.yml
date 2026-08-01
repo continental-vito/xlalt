@@ -18,6 +18,16 @@ jobs:
   # three per-host pages. jsdom loads that exact markup and exercises the
   # tabs, theming, forms, and the messages the engine would receive, which
   # the Lua suite cannot see.
+  # The app menu, About/Hide/Quit and the window titles live in compiled
+  # nibs. Editing them wrong is either an app that will not start or an
+  # app with dead menu items, and neither is visible to the Lua suite.
+  nib-rename:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Nib rename is lossless and spares selectors
+        run: bash build/verify-nib-rename.sh
+
   # In-place updates hinge on one property of the signature: a new build
   # must satisfy the installed build's designated requirement. It is
   # invisible to `codesign --verify`, and getting it wrong shows up only

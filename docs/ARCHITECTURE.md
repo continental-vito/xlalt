@@ -108,6 +108,33 @@ The manager is ~400 lines of JavaScript embedded in `init.lua` as a string, gene
 
 Both apps can therefore be installed at once. They should not be *running* at once: two engines watching Excel would both fire on every sequence.
 
+## Naming
+
+Three names, deliberately separate:
+
+| what | value | why |
+|---|---|---|
+| `CFBundleIdentifier` | `com.corgianalyst.excel-alt-shortcuts` | Accessibility grants, preferences and the update requirement key off it. Never change it. |
+| bundle filename | `ExcelAlt.app` | An update replaces the host bundle in place. Renaming it underneath an installed copy risks the swap. |
+| `CFBundleName` / `CFBundleDisplayName` / nib strings | **CobAlt** | Everything the user reads: Dock, ⌘-Tab, the application menu, About/Hide/Quit. |
+
+The user-facing name lives in two places that must agree. `Info.plist` covers the Dock and ⌘-Tab. The application menu and the About/Hide/Quit items are compiled into the runtime's nibs, and nothing substitutes them at runtime — the nib is what the user reads. `APPNAME` in `init.lua` is the third and must match.
+
+### Renaming the nibs
+
+`build/rename-nib.py` parses the NIBArchive container and rewrites display strings. It replaced a length-preserving substitution:
+
+```sh
+perl -pi -e 's/Hammerspoon/ExcelAlt XL/g'    # what this used to be
+```
+
+which had two faults worth remembering:
+
+- It forced the product name to be **exactly 11 characters**, since the byte length had to match. That is the only reason the menu read "ExcelAlt XL" while the Dock read "CobAlt" — nobody chose that name, the byte count did.
+- Nib strings are all archived under the same key (`NS.bytes`), so selectors are stored exactly like display strings. The substitution rewrote `quitHammerspoon:` into `quitExcelAlt XL:`, a method no class implements. **That is why Quit did nothing**, and why the app had to be force-quit, from v1 to v3.10.
+
+`rename-nib.py` tells them apart by shape: a selector is an identifier ending in a colon with no spaces. It refuses to write a file that does not round-trip byte-for-byte first — a corrupt `MainMenu.nib` is an app that will not launch. `build/verify-nib-rename.sh` runs the whole thing against the real nibs in CI, renaming to a deliberately different-length name, and asserts both that the display strings changed and that `quitHammerspoon:` did not. `build-app.sh` asserts the same on every build.
+
 ## Updates
 
 **Check for updates** in the Shortcut Manager header downloads, installs and relaunches without Sparkle. It is the dependable path and the only one that can update a copy installed before v3.10.
