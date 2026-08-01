@@ -116,6 +116,12 @@ jobs:
           BUILD="${{ github.run_number }}"
           SIG=$(openssl pkeyutl -sign -inkey "$KEYFILE" -rawin -in dist/ExcelAlt-update.zip | base64)
           LEN=$(stat -f%z dist/ExcelAlt-update.zip)
+          # Read the floor off the built app rather than hardcoding it. It
+          # was pinned at 12.0 here while the runtime required 13.0, so
+          # Sparkle offered updates to machines that could not run them.
+          MINOS=$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" \
+                    dist/ExcelAlt.app/Contents/Info.plist)
+          test -n "$MINOS"
           cat > appcast.xml <<APPCAST
           <?xml version="1.0" encoding="utf-8"?>
           <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
@@ -124,7 +130,7 @@ jobs:
           <title>Version $VER</title>
           <sparkle:version>$BUILD</sparkle:version>
           <sparkle:shortVersionString>$VER</sparkle:shortVersionString>
-          <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
+          <sparkle:minimumSystemVersion>$MINOS</sparkle:minimumSystemVersion>
           <enclosure url="https://github.com/continental-vito/xlalt/releases/download/$TAG/ExcelAlt-update.zip" length="$LEN" type="application/octet-stream" sparkle:edSignature="$SIG"/>
           </item>
           </channel></rss>

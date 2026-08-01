@@ -11,7 +11,7 @@ Tap the **⌥ Option** key, then type the sequence you already know from Windows
 
 ### [⬇ Download for macOS](https://github.com/continental-vito/xlalt/releases/latest/download/XL.dmg)
 
-<sub>Apple Silicon &amp; Intel · macOS 12+ · free &amp; open source</sub>
+<sub>Apple Silicon &amp; Intel · macOS 13+ · free &amp; open source</sub>
 
 [![Downloads](https://img.shields.io/github/downloads/continental-vito/xlalt/total?label=downloads&color=0F6A3F)](https://github.com/continental-vito/xlalt/releases)
 [![Latest release](https://img.shields.io/github/v/release/continental-vito/xlalt?label=version&color=1F8A55)](https://github.com/continental-vito/xlalt/releases/latest)
