@@ -11,6 +11,10 @@ name: verify in-place update
 # release that changes anything about signing.
 on:
   workflow_dispatch:
+  # Also runs on a scratch branch, so it can be exercised without first
+  # putting the workflow on main.
+  push:
+    branches: ['verify/**']
 
 jobs:
   cross-build:
