@@ -7,6 +7,10 @@ name: verify in-place update
 # with the nested Sparkle framework, XPC services and the compiled
 # launcher in place — the parts a minimal bundle cannot represent.
 #
+# Every check is its own step, deliberately. GitHub serves job logs from
+# a storage host that is not always reachable, and when it isn't, the
+# step name is the only diagnosis available. Keep them granular.
+#
 # Publishes nothing. Manual dispatch only; run it before tagging a
 # release that changes anything about signing.
 on:
@@ -41,61 +45,85 @@ jobs:
           bash build/build-app.sh
           mv dist/ExcelAlt.app "$RUNNER_TEMP/new.app"
 
-      # Everything here asserts. A printed result is worth nothing if the
-      # only thing anyone checks afterwards is whether the tick was green.
-      - name: Would the update install?
+      - name: check - both bundles are the real product
         run: |
-          set -euo pipefail
-          OLD="$RUNNER_TEMP/old.app" ; NEW="$RUNNER_TEMP/new.app"
-
-          echo "→ both bundles are the real product, not an empty directory"
-          test -x "$OLD/Contents/MacOS/ExcelAltCore"
-          test -x "$NEW/Contents/MacOS/ExcelAltCore"
-          test -x "$NEW/Contents/MacOS/ExcelAlt"
-          test -d "$NEW/Contents/Frameworks/Sparkle.framework"
-          SIZE=$(du -sm "$NEW" | cut -f1)
-          echo "   new.app is ${SIZE}MB"
-          test "$SIZE" -ge 30
-
-          echo "→ the two builds genuinely differ"
-          OH=$(codesign -d -vv "$OLD" 2>&1 | awk -F= '/^CDHash/{print $2}')
-          NH=$(codesign -d -vv "$NEW" 2>&1 | awk -F= '/^CDHash/{print $2}')
-          echo "   old CDHash=$OH"
-          echo "   new CDHash=$NH"
-          test -n "$OH" ; test -n "$NH" ; test "$OH" != "$NH"
-
-          echo "→ neither carries a build-specific requirement"
-          for A in "$OLD" "$NEW"; do
-            DR=$(codesign -d -r- "$A" 2>&1 | grep '^designated')
-            echo "   $DR"
-            echo "$DR" | grep -q 'identifier'
-            echo "$DR" | grep -qv 'cdhash'
+          set -eu
+          for A in "$RUNNER_TEMP/old.app" "$RUNNER_TEMP/new.app"; do
+            test -x "$A/Contents/MacOS/ExcelAlt"
+            test -x "$A/Contents/MacOS/ExcelAltCore"
+            test -f "$A/Contents/Resources/init.lua"
+            test -d "$A/Contents/Frameworks/Sparkle.framework"
+            SIZE=$(du -sm "$A" | cut -f1)
+            echo "$A is ${SIZE}MB"
+            test "$SIZE" -ge 30
           done
 
+      - name: check - the two builds are different releases
+        run: |
+          set -eu
+          OV=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
+                 "$RUNNER_TEMP/old.app/Contents/Info.plist")
+          NV=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
+                 "$RUNNER_TEMP/new.app/Contents/Info.plist")
+          echo "old=$OV new=$NV"
+          test "$OV" = "9.0"
+          test "$NV" = "9.1"
+          if cmp -s "$RUNNER_TEMP/old.app/Contents/Resources/init.lua" \
+                    "$RUNNER_TEMP/new.app/Contents/Resources/init.lua"; then
+            echo "identical payloads; the comparison below would be vacuous" >&2
+            exit 1
+          fi
+
+      - name: check - neither carries a build-specific requirement
+        run: |
+          set -eu
+          for A in "$RUNNER_TEMP/old.app" "$RUNNER_TEMP/new.app"; do
+            DR=$(codesign -d -r- "$A" 2>&1 | grep '^designated' || true)
+            echo "$A: $DR"
+            test -n "$DR"
+            case "$DR" in
+              *cdhash*) echo "requirement is pinned to one build" >&2; exit 1 ;;
+            esac
+            case "$DR" in
+              *'identifier "com.corgianalyst.excel-alt-shortcuts"'*) ;;
+              *) echo "unexpected requirement" >&2; exit 1 ;;
+            esac
+          done
+
+      - name: build the requirement checker
+        run: |
+          set -eu
           clang -O2 -o "$RUNNER_TEMP/drcheck" build/drcheck.c \
             -framework CoreFoundation -framework Security
+          test -x "$RUNNER_TEMP/drcheck"
 
-          echo "→ control: the same two builds, signed the old way, must be REJECTED"
-          cp -R "$OLD" "$RUNNER_TEMP/ctl-old.app"
-          cp -R "$NEW" "$RUNNER_TEMP/ctl-new.app"
+      # If this step passes, everything after it is meaningless: it would
+      # mean the checker succeeds regardless of what it is given.
+      - name: control - the same builds signed the old way must be REJECTED
+        run: |
+          set -eu
+          cp -R "$RUNNER_TEMP/old.app" "$RUNNER_TEMP/ctl-old.app"
+          cp -R "$RUNNER_TEMP/new.app" "$RUNNER_TEMP/ctl-new.app"
           codesign --force --deep --sign - "$RUNNER_TEMP/ctl-old.app"
           codesign --force --deep --sign - "$RUNNER_TEMP/ctl-new.app"
           if "$RUNNER_TEMP/drcheck" "$RUNNER_TEMP/ctl-old.app" "$RUNNER_TEMP/ctl-new.app"; then
-            echo "✗ plain ad-hoc signing passed — the checker is not measuring anything" >&2
+            echo "plain ad-hoc signing passed - the checker measures nothing" >&2
             exit 1
           fi
-          echo "   ✓ rejected, so the check below means something"
+          echo "rejected, as it has been since v3.2"
 
-          echo "→ Sparkle's check, on the real bundles"
-          "$RUNNER_TEMP/drcheck" "$OLD" "$NEW"
-          echo "→ and the reverse, so it is not an accident of ordering"
-          "$RUNNER_TEMP/drcheck" "$NEW" "$OLD"
+      - name: check - the real update would install
+        run: '"$RUNNER_TEMP/drcheck" "$RUNNER_TEMP/old.app" "$RUNNER_TEMP/new.app"'
 
-      - name: Nested code survived the re-seal
+      - name: check - and in the reverse direction
+        run: '"$RUNNER_TEMP/drcheck" "$RUNNER_TEMP/new.app" "$RUNNER_TEMP/old.app"'
+
+      - name: check - nested code survived the re-seal
         run: |
           # The top level is re-signed without --deep to keep the explicit
           # requirement off the nested Sparkle framework. Confirm that did
           # not leave anything inside unsealed.
+          set -eu
           codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/new.app"
           codesign --verify --strict \
             "$RUNNER_TEMP/new.app/Contents/Frameworks/Sparkle.framework"
