@@ -2406,7 +2406,11 @@ pcall(openManager)
 
 -- The launch-time agent->regular-app transform destroys status items
 -- created before it completes, so this waits. One creation, one ladder.
-hs.timer.doAfter(2, function()
+--
+-- Retained: an unreferenced doAfter can be collected before it fires,
+-- which is why the environment probe never logged a single line — the
+-- ladder we did see was started from the Accessibility path instead.
+ExcelAlt.startupBar = hs.timer.doAfter(2, function()
   logMenubarEnvironment()
   setupMenubar(1)
 end)

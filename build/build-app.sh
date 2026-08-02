@@ -178,6 +178,23 @@ fi
 [ -f assets/menubar.png ]    && cp assets/menubar.png    "$APP/Contents/Resources/xl-menubar.png"
 [ -f assets/xl-corgi.png ]   && cp assets/xl-corgi.png   "$APP/Contents/Resources/xl-corgi.png"
 
+# EXPERIMENT (see docs/ARCHITECTURE.md, menu bar). Must run before signing:
+# it edits Info.plist, which the signature seals.
+#
+# Normally CFBundleExecutable is the launcher, which execs ExcelAltCore, so
+# the running executable is not the one the bundle declares. On macOS 26 the
+# app never appears under Control Center > "Allow in the Menu Bar" at all --
+# not switched off, absent -- while other third-party apps are listed. This
+# points CFBundleExecutable straight at the engine so no exec happens.
+#
+# It skips the launcher's preference and config setup, so it is only valid on
+# a machine where a normal build has already run at least once.
+if [ -n "${XL_NO_LAUNCHER:-}" ]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable ExcelAltCore" \
+    "$APP/Contents/Info.plist"
+  echo "→ Experiment: engine is the main executable, launcher not used"
+fi
+
 if [ -n "${XL_SIGN_IDENTITY:-}" ]; then
   # ---------------------------------------------------------------
   # Developer ID build
@@ -218,7 +235,7 @@ if [ -n "${XL_SIGN_IDENTITY:-}" ]; then
     --entitlements build/entitlements.plist \
     --sign "$XL_SIGN_IDENTITY" "$APP"
 else
-  echo "→ Signing (ad-hoc, with a stable designated requirement)"
+echo "→ Signing (ad-hoc, with a stable designated requirement)"
   # Sign the Mach-O engine first, then seal the bundle.
   codesign --force --sign - "$APP/Contents/MacOS/ExcelAltCore"
   codesign --force --deep --sign - "$APP"
