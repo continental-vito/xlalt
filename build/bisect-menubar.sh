@@ -15,6 +15,7 @@
 #   3-dockicon   + LSUIElement removed
 #   4-launcher   + renamed executable behind our launcher
 #   5-nibs       + rewritten nibs  (= the full pipeline)
+#   6-nopurge    = 5, minus the launcher deleting NSStatusItem prefs
 #
 # Usage:
 #   bash build/bisect-menubar.sh
@@ -134,6 +135,20 @@ done
 point_config "$BID.five"
 resign "$A" "$BID.five"
 
+echo "→ 6-nopurge   (= 5, but the launcher does NOT delete NSStatusItem prefs)"
+A=$(start 6-nopurge)
+plist "$A" "Set :CFBundleIdentifier $BID.six"
+plist "$A" "Delete :LSUIElement"
+mv "$A/Contents/MacOS/Hammerspoon" "$A/Contents/MacOS/ExcelAltCore"
+clang -O2 -arch arm64 -arch x86_64 -DXL_NO_STATUS_PURGE \
+  -o "$A/Contents/MacOS/ExcelAlt" build/launcher.c -framework CoreFoundation
+plist "$A" "Set :CFBundleExecutable ExcelAlt"
+for nib in "$A"/Contents/Resources/*.nib; do
+  python3 build/rename-nib.py "$nib" "Hammerspoon" "CobAlt" >/dev/null 2>&1 || true
+done
+point_config "$BID.six"
+resign "$A" "$BID.six"
+
 echo
 echo "→ Confirming every variant will actually launch"
 fail=0
@@ -157,6 +172,7 @@ cat <<NOTES
     open $OUT/3-dockicon.app
     open $OUT/4-launcher.app
     open $OUT/5-nibs.app
+    open $OUT/6-nopurge.app
 
   Each says VISIBLE or NOT laid out on screen, and appends to
   $LOGS/bisect.log

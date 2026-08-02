@@ -68,6 +68,7 @@ int main(void) {
    * below, its own fallback config directory — so it cannot disturb the
    * released app installed alongside it. */
   Boolean isDev = bid && CFStringHasSuffix(bid, CFSTR(".dev"));
+#ifndef XL_NO_STATUS_PURGE
   CFArrayRef klist = bid ? CFPreferencesCopyKeyList(
       bid, kCFPreferencesCurrentUser, kCFPreferencesAnyHost) : NULL;
   if (klist) {
@@ -78,6 +79,7 @@ int main(void) {
     }
     CFRelease(klist);
   }
+#endif
   CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication);
 
   /* Robust config delivery: cfprefsd may ignore or cache MJConfigFile
