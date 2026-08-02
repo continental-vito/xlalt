@@ -2367,6 +2367,15 @@ pcall(function() hs.openConsoleOnDockClick(false) end)
 hs.dockIconClickCallback = function() pcall(openManager) end
 pcall(openManager)
 
+-- The runtime's own menu bar icon and console are its UI, not ours. Without
+-- a launcher to set these as preferences before startup, they are turned
+-- off here instead — early, before anything else can show them.
+--
+-- pcall each: an engine that lacks one of these should still start.
+pcall(function() hs.menuIcon(false) end)
+pcall(function() hs.closeConsole() end)
+pcall(function() hs.autoLaunch(false) end)
+
 -- The launch-time agent->regular-app transform destroys status items
 -- created before it completes, so this waits. One creation, one ladder.
 --
