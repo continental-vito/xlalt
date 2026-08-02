@@ -1,0 +1,60 @@
+name: dev build
+# Builds a DEVELOPMENT build from a branch and uploads it as a workflow
+# artifact, so a change can be tested on a real Mac without cloning the
+# repo or installing Xcode.
+#
+# It is a separate app from the released one: its own bundle id, its own
+# preferences, its own Accessibility entry, its own data directory, and
+# no update feed. Installing it cannot touch /Applications/ExcelAlt.app
+# or its shortcuts.json. Same settings as build/build-local.sh.
+#
+# Publishes nothing: no tag, no release, no appcast.
+on:
+  workflow_dispatch:
+  push:
+    branches: ['menubar/**', 'dev-build/**']
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tests
+        run: |
+          brew list lua &>/dev/null || brew install lua
+          lua tests/run_tests.lua
+
+      - name: Build the dev app
+        env:
+          XL_BUNDLE_ID: com.corgianalyst.excel-alt-shortcuts.dev
+          XL_BUNDLE_NAME: ExcelAlt-dev
+          XL_DISPLAY_NAME: CobAlt (dev)
+          XL_NO_UPDATES: "1"
+          XL_DMG_NAME: XL-dev
+          XL_VERSION: 0.0-dev
+        run: bash build/build-app.sh
+
+      - name: Confirm it is a dev build, not the real one
+        run: |
+          set -eu
+          APP=dist/ExcelAlt-dev.app
+          test -d "$APP"
+          BID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist")
+          echo "bundle id: $BID"
+          case "$BID" in
+            *.dev) ;;
+            *) echo "not a dev bundle id - refusing to publish this artifact" >&2; exit 1 ;;
+          esac
+          # No feed: a dev build must never reach for the release appcast.
+          if /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$APP/Contents/Info.plist" 2>/dev/null; then
+            echo "dev build carries an update feed" >&2; exit 1
+          fi
+          echo "launcher: $(lipo -archs "$APP/Contents/MacOS/ExcelAlt")"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CobAlt-dev-${{ github.ref_name }}-${{ github.run_number }}
+          path: dist/XL-dev.dmg
+          retention-days: 14
+          if-no-files-found: error

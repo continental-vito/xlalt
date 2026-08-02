@@ -118,6 +118,12 @@ local function newTimer(fn, every, delay)
   return t
 end
 
+-- clearTimers() drops everything pending without running it. Needed
+-- because a test that installs an update leaves the engine's 0.4s
+-- "quit now" timer queued; a later flushTimers(2) would fire it and end
+-- the test process silently, with exit status 0.
+function M.clearTimers() M.timers = {} end
+
 -- flushTimers()          runs everything pending
 -- flushTimers(maxDelay)  runs only timers scheduled with delay <= maxDelay
 function M.flushTimers(maxDelay)
@@ -269,14 +275,31 @@ hs.canvas = {
   end,
 }
 
-hs.menubar = { new = function()
-  local b = { }
+-- Menu bar. The interesting states are not "created or not" but what
+-- macOS did with the item afterwards, so the frame is configurable:
+--   M.menubarFrame = nil                       -- frame() unavailable
+--   M.menubarFrame = {x=0,y=956,w=69,h=0}      -- the zero-height failure
+--   M.menubarFrame = {x=1200,y=0,w=24,h=24}    -- healthy
+-- M.log.menubars records every item ever created, so a test can catch
+-- creation churn as well as the end state.
+M.menubarFrame = { x = 1200, y = 0, w = 24, h = 24 }
+M.log.menubars = {}
+
+hs.menubar = { new = function(inBar, autosaveName)
+  local b = { autosaveName = autosaveName, inBar = (inBar ~= false) }
   for _, m in ipairs({ "setIcon", "setTitle", "setTooltip", "setMenu" }) do
     b[m] = function(self, v) b["_" .. m] = v ; return self end
   end
-  function b:isInMenuBar() return true end
+  function b:isInMenuBar() return b.inBar end
+  function b:frame()
+    if M.menubarFrame == nil then error("no frame") end
+    return M.menubarFrame
+  end
+  function b:removeFromMenuBar() b.inBar = false ; b.removed = true ; return b end
+  function b:returnToMenuBar()   b.inBar = true  ; b.returned = true ; return b end
   function b:delete() b.deleted = true end
   M.menubar = b
+  table.insert(M.log.menubars, b)
   return b
 end }
 
@@ -335,7 +358,20 @@ end }
 hs.host = { operatingSystemVersion = function() return { major = 15, minor = 0, patch = 0 } end }
 hs.execute = function(cmd) M.log.executed = M.log.executed or {} ;
   M.log.executed[#M.log.executed + 1] = cmd ; return "", true, "exit", 0 end
-hs.settings = { getKeys = function() return {} end, clear = function(_) end }
+-- Real key store: the status-item purge is about which keys survive, so
+-- a stub that returns an empty list makes the test vacuous.
+M.settings = {}
+hs.settings = {
+  getKeys = function()
+    local out = {}
+    for k in pairs(M.settings) do out[#out + 1] = k end
+    table.sort(out)
+    return out
+  end,
+  clear = function(k) M.settings[k] = nil end,
+  set   = function(k, v) M.settings[k] = v end,
+  get   = function(k) return M.settings[k] end,
+}
 hs.hotkey = { new = function(mods, key, fn)
   return { enable = function() end, disable = function() end }
 end }

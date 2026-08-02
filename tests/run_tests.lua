@@ -790,6 +790,89 @@ end
 ExcelAlt.version = "3.3" ; mock.httpResponse = nil
 ExcelAlt.updating = false ; ExcelAlt.skipVersion = nil
 
+-- ---------------------------------------------------------------------
+-- Menu bar. The item is created successfully and then not laid out, so
+-- "did hs.menubar.new() return something" is not the question; what
+-- macOS did with it afterwards is.
+-- ---------------------------------------------------------------------
+
+-- A stable autosave name is how macOS remembers the item between
+-- launches. Earlier versions used "xl" .. os.time(), so every launch
+-- registered a new identity and reused none. This is the regression
+-- test for that: two runs must ask for the SAME name.
+-- Earlier update tests leave the engine's "quit now" timer queued.
+mock.clearTimers()
+mock.menubarFrame = { x = 1200, y = 0, w = 24, h = 24 }
+mock.log.menubars = {}
+T.setupMenubar(1) ; mock.flushTimers(2)
+local firstName = mock.log.menubars[1] and mock.log.menubars[1].autosaveName
+T.setupMenubar(1) ; mock.flushTimers(2)
+local secondName = mock.log.menubars[#mock.log.menubars].autosaveName
+check("the status item asks for a stable identity across launches",
+  firstName ~= nil and firstName == secondName, tostring(firstName) .. " vs " .. tostring(secondName))
+-- Comparing firstName to T.MENUBAR_AUTOSAVE would be tautological, and
+-- comparing two calls a millisecond apart does not separate a constant
+-- from os.time() either -- both land in the same second. The property
+-- that actually distinguishes them is that a clock-derived name carries
+-- digits and a constant does not, backed by reading the source.
+check("the identity is a constant, not a per-launch value",
+  firstName ~= nil and not firstName:find("%d"), tostring(firstName))
+do
+  local src = io.open("src/init.lua"):read("*a")
+  check("the autosave name is a literal, not built from the clock",
+    src:match('MENUBAR_AUTOSAVE%s*=%s*"[^"]+"') ~= nil
+      and not src:match('MENUBAR_AUTOSAVE%s*=[^\n]*os%.time'))
+  check("no status item is created with a clock-derived name",
+    not src:match('menubar%.new[^\n]*os%.time'))
+end
+
+-- A healthy item must not trigger the ladder.
+mock.log.menubars = {}
+ExcelAlt.menubarStatus = nil
+T.setupMenubar(1) ; mock.flushTimers(3)
+check("a laid-out item is left alone",
+  ExcelAlt.menubarStatus == "ok" and #mock.log.menubars == 1,
+  tostring(ExcelAlt.menubarStatus) .. " items=" .. #mock.log.menubars)
+
+-- The actual failure: present, but zero height. isInMenuBar() says true,
+-- which is why this went undiagnosed for so long.
+mock.menubarFrame = { x = 0, y = 956, w = 69, h = 0 }
+mock.log.menubars = {}
+ExcelAlt.menubarStatus = nil
+-- Each flush only advances one level of nesting, and the ladder is
+-- nested three deep, so it has to be driven.
+T.setupMenubar(1)
+for _ = 1, 6 do mock.flushTimers(5) end
+check("a zero-height item is not reported as working",
+  ExcelAlt.menubarStatus ~= "ok", tostring(ExcelAlt.menubarStatus))
+check("a re-layout is attempted before giving up",
+  mock.log.menubars[1] ~= nil and mock.log.menubars[1].removed == true
+    and mock.log.menubars[1].returned == true)
+check("it falls back to a text-only item",
+  #mock.log.menubars >= 2 and mock.log.menubars[#mock.log.menubars]._setTitle ~= nil)
+check("and stops rather than retrying forever",
+  #mock.log.menubars <= 3, "items created: " .. #mock.log.menubars)
+
+-- Purging must remove the per-launch litter and keep the item's own key,
+-- which the previous code cleared along with everything else.
+mock.settings = {
+  ["NSStatusItem Preferred Position xl1699999999"] = 100,
+  ["NSStatusItem Preferred Position xl1700000000"] = 200,
+  ["NSStatusItem Visible xl1700000000"] = false,
+  ["NSStatusItem Preferred Position " .. T.MENUBAR_AUTOSAVE] = 300,
+  ["SomeOtherPref"] = true,
+}
+T.purgeStaleStatusItemPrefs()
+check("per-launch status-item litter is cleared",
+  mock.settings["NSStatusItem Preferred Position xl1699999999"] == nil
+    and mock.settings["NSStatusItem Visible xl1700000000"] == nil)
+check("the item keeps its own remembered position",
+  mock.settings["NSStatusItem Preferred Position " .. T.MENUBAR_AUTOSAVE] == 300)
+check("unrelated preferences are untouched", mock.settings["SomeOtherPref"] == true)
+
+mock.menubarFrame = { x = 1200, y = 0, w = 24, h = 24 }
+ExcelAlt.menubarStatus = nil
+
 -- =====================================================================
 print("\n[9] Migration from the v1 (Excel-only) shortcuts.json")
 -- =====================================================================

@@ -2059,62 +2059,156 @@ local function menubarMenu()
   }
 end
 
-local function setupMenubar()
-  -- If an item already exists AND macOS reports it on the bar, keep it.
-  if ExcelAlt.bar then
-    local ok, inBar = pcall(function() return ExcelAlt.bar:isInMenuBar() end)
-    if ok and inBar == true then
-      ExcelAlt.bar:setMenu(menubarMenu)
-      return
+-- ---------------------------------------------------------------------
+-- Menu bar item
+-- ---------------------------------------------------------------------
+-- Read this before changing anything here.
+--
+-- The item used to be created with a FRESH autosave name every launch
+-- ("xl" .. os.time()). An autosave name is how macOS remembers a status
+-- item between launches, so a new one each time meant the app registered
+-- a brand-new status item identity on every single launch and reused
+-- none of them. Months of launches left a pile of
+-- "NSStatusItem Preferred Position xl…" keys in this app's preferences.
+--
+-- Whether or not that is what broke the layout, it made every previous
+-- diagnosis unreliable: no two launches asked macOS for the same thing,
+-- so no two launches were comparable. Along with it came three creation
+-- attempts (+2s, +6s, +12s) racing each other, each deleting the last.
+--
+-- This asks for one stable identity, once, then checks what macOS
+-- actually did and steps down a short ladder if the answer is wrong.
+
+local MENUBAR_AUTOSAVE = "CobAltStatusItem"
+
+-- Clear the accumulated per-launch identities, keeping ours.
+local function purgeStaleStatusItemPrefs()
+  local removed, kept = 0, 0
+  local ok = pcall(function()
+    for _, k in ipairs(hs.settings.getKeys() or {}) do
+      if k:find("^NSStatusItem") then
+        if k:find(MENUBAR_AUTOSAVE, 1, true) then
+          kept = kept + 1        -- ours; keeping it is the entire point
+        else
+          hs.settings.clear(k)
+          removed = removed + 1
+        end
+      end
     end
+  end)
+  dlog(string.format("menubar: stale status-item prefs removed=%d kept=%d ok=%s",
+                     removed, kept, tostring(ok)))
+end
+
+local function describeFrame(fr)
+  if not fr then return "n/a" end
+  return string.format("(%.0f,%.0f %.0fx%.0f)", fr.x, fr.y, fr.w, fr.h)
+end
+
+-- The menu bar height is the useful signal: a notched Mac reports roughly
+-- 37-38pt of it, an unnotched one about 24. Logged once so a report from
+-- a machine we cannot see says which kind it came from.
+local function logMenubarEnvironment()
+  pcall(function()
+    local s = hs.screen.mainScreen()
+    local f, ff = s:frame(), s:fullFrame()
+    dlog(string.format(
+      "menubar: screen=%s full=%.0fx%.0f usable=%.0fx%.0f barHeight=%.0f screens=%d",
+      tostring(s:name()), ff.w, ff.h, f.w, f.h, f.y - ff.y, #hs.screen.allScreens()))
+  end)
+end
+
+-- Present AND laid out. isInMenuBar() alone is not enough: it has
+-- returned true for an item with a zero-height frame, which is exactly
+-- the state that reads to the user as "the icon never appears".
+local function menubarHealthy()
+  local ok, inBar = pcall(function()
+    return ExcelAlt.bar and ExcelAlt.bar:isInMenuBar()
+  end)
+  if not (ok and inBar == true) then return false, nil end
+  local okF, fr = pcall(function() return ExcelAlt.bar:frame() end)
+  if not okF or not fr then return false, nil end
+  return (fr.w > 0 and fr.h > 0), fr
+end
+
+local function createMenubarItem(withIcon)
+  if ExcelAlt.bar then
     pcall(function() ExcelAlt.bar:delete() end)
     ExcelAlt.bar = nil
   end
-  -- Fresh autosave identity sidesteps any per-item state macOS persists
-  -- (older engines accept only the first argument; fall back cleanly).
-  local okNew, bar = pcall(hs.menubar.new, true, "xl" .. tostring(os.time()))
-  ExcelAlt.bar = (okNew and bar) or hs.menubar.new()
-  if not ExcelAlt.bar then dlog("menubar: hs.menubar.new() returned nil") ; return end
-  local p = hs.processInfo.resourcePath .. "/xl-menubar@2x.png"
-  if fileExists(p) then
-    local img = hs.image.imageFromPath(p)
-    if img then
-      img = img:setSize({ w = 18, h = 18 })
-      img = img:template(true)
-      ExcelAlt.barIcon = img
-      ExcelAlt.bar:setIcon(img, true)  -- explicit template: auto-adapts to dark menu bars
-    end
+  local ok, bar = pcall(hs.menubar.new, true, MENUBAR_AUTOSAVE)
+  if not ok or not bar then
+    ok, bar = pcall(hs.menubar.new, true)   -- engines predating autosave names
   end
-  -- Title is ALWAYS set: if the status item exists, text cannot be
-  -- invisible, so presence/absence of the title in the menu bar is a
-  -- definitive diagnostic (icon-only could hide via rendering issues).
-  ExcelAlt.bar:setTitle(APPNAME)
-  ExcelAlt.bar:setTooltip(APPNAME .. " — Alt shortcuts for Excel, PowerPoint & Word")
-  ExcelAlt.bar:setMenu(menubarMenu)
-  dlog("menubar: item created; icon=" .. tostring(ExcelAlt.barIcon ~= nil))
-  -- Half a second later, record what macOS actually DID with the item:
-  -- on the bar or not, and at which screen coordinates.
-  hs.timer.doAfter(0.5, function()
-    local okI, inBar = pcall(function() return ExcelAlt.bar and ExcelAlt.bar:isInMenuBar() end)
-    local okF, fr   = pcall(function() return ExcelAlt.bar and ExcelAlt.bar:frame() end)
-    local scr = hs.screen.mainScreen():frame()
-    dlog(string.format("menubar: visible=%s frame=%s screen=%dx%d",
-      tostring(okI and inBar),
-      (okF and fr) and string.format("(%.0f,%.0f %.0fx%.0f)", fr.x, fr.y, fr.w, fr.h) or "n/a",
-      scr.w, scr.h))
-    -- Zero-height frame = window never laid out into the bar: force a
-    -- remove/return cycle, which makes the status bar lay it out afresh.
-    if okF and fr and fr.h == 0 then
-      dlog("menubar: zero-height layout; forcing remove/return re-layout")
+  if not ok or not bar then
+    dlog("menubar: hs.menubar.new() returned nil")
+    return false
+  end
+  ExcelAlt.bar = bar
+
+  local icon
+  if withIcon then
+    local p = hs.processInfo.resourcePath .. "/xl-menubar@2x.png"
+    if fileExists(p) then
+      local img = hs.image.imageFromPath(p)
+      if img then icon = img:setSize({ w = 18, h = 18 }):template(true) end
+    end
+    if not icon then dlog("menubar: icon asset missing or unreadable at " .. p) end
+  end
+
+  ExcelAlt.barIcon = icon
+  if icon then
+    bar:setIcon(icon, true)   -- template: adapts to light and dark bars
+  else
+    bar:setTitle(APPNAME)     -- text cannot fail to render
+  end
+  bar:setTooltip(APPNAME .. " — Alt shortcuts for Excel, PowerPoint & Word")
+  bar:setMenu(menubarMenu)
+  return true
+end
+
+-- Ladder, each rung given a second to settle:
+--   1. icon
+--   2. icon, after a remove/return cycle, which forces a fresh layout pass
+--   3. text only, the most primitive form a status item takes
+-- After rung 3 it stops. Retrying forever hid the failure before.
+local setupMenubar
+setupMenubar = function(rung)
+  rung = rung or 1
+  local withIcon = (rung < 3)
+  if not createMenubarItem(withIcon) then
+    ExcelAlt.menubarStatus = "failed"
+    return
+  end
+  dlog(string.format("menubar: rung %d created (%s)", rung, withIcon and "icon" or "text"))
+
+  ExcelAlt.barCheck = hs.timer.doAfter(1.0, function()
+    local healthy, fr = menubarHealthy()
+    dlog(string.format("menubar: rung %d healthy=%s frame=%s",
+                       rung, tostring(healthy), describeFrame(fr)))
+    if healthy then
+      ExcelAlt.menubarStatus = "ok"
+      return
+    end
+    if rung == 1 then
+      dlog("menubar: forcing a re-layout (remove then return)")
       pcall(function() ExcelAlt.bar:removeFromMenuBar() end)
-      hs.timer.doAfter(0.3, function()
+      ExcelAlt.barRetry = hs.timer.doAfter(0.5, function()
         pcall(function() ExcelAlt.bar:returnToMenuBar() end)
-        hs.timer.doAfter(0.5, function()
-          local _, fr2 = pcall(function() return ExcelAlt.bar and ExcelAlt.bar:frame() end)
-          dlog("menubar: after re-layout frame=" ..
-            (fr2 and string.format("(%.0f,%.0f %.0fx%.0f)", fr2.x, fr2.y, fr2.w, fr2.h) or "n/a"))
+        ExcelAlt.barRetry2 = hs.timer.doAfter(1.0, function()
+          local ok2, fr2 = menubarHealthy()
+          dlog("menubar: after re-layout healthy=" .. tostring(ok2) ..
+               " frame=" .. describeFrame(fr2))
+          if ok2 then
+            ExcelAlt.menubarStatus = "ok"
+          else
+            setupMenubar(3)
+          end
         end)
       end)
+    else
+      ExcelAlt.menubarStatus = "failed"
+      dlog("menubar: text-only item still not laid out; stopping for this launch")
     end
   end)
 end
@@ -2164,22 +2258,13 @@ syncFrontmost("startup")
 ExcelAlt.watcher = hs.application.watcher.new(onAppEvent)
 ExcelAlt.watcher:start()
 
--- If the status item was ever ⌘-dragged off the menu bar or hidden by a
--- menu-bar manager, macOS persists "NSStatusItem Visible…=false" in this
--- app's preferences and every future item is created INVISIBLE (creation
--- still succeeds — matching our logs exactly). Purge any such flags.
-pcall(function()
-  for _, k in ipairs(hs.settings.getKeys() or {}) do
-    if k:find("^NSStatusItem") then
-      dlog("menubar: clearing hidden-state pref '" .. k .. "'")
-      hs.settings.clear(k)
-    end
-  end
-end)
+-- Clear the per-launch identities left by earlier versions. This used to
+-- clear EVERY NSStatusItem key including the item's own, which threw away
+-- the position macOS had just been asked to remember.
+purgeStaleStatusItemPrefs()
 
 -- Menu bar item is created ONLY after launch settles: creating it during
--- the agent->regular transform lets macOS destroy it. First creation at
--- +2s; safety rebuilds at +6s and after permission grant.
+-- the agent->regular transform lets macOS destroy it.
 dlog("startup: engine v" .. ExcelAlt.version .. " loaded from " ..
      tostring(hs.processInfo.bundlePath or "?") .. " | configdir=" ..
      tostring(hs.configdir) .. " | menubar deferred")
@@ -2215,23 +2300,11 @@ pcall(function() hs.openConsoleOnDockClick(false) end)
 hs.dockIconClickCallback = function() pcall(openManager) end
 pcall(openManager)
 
--- The launch-time agent->regular-app transform is known to destroy status
--- items created before it completes: rebuild ours once things settle.
-hs.timer.doAfter(2, setupMenubar)
-hs.timer.doAfter(6, setupMenubar)
--- Last resort at +12s: if macOS still refuses to show the item, rebuild it
--- as text-only, the most primitive form a status item can take.
-hs.timer.doAfter(12, function()
-  local ok, inBar = pcall(function() return ExcelAlt.bar and ExcelAlt.bar:isInMenuBar() end)
-  if not (ok and inBar == true) then
-    dlog("menubar: STILL not visible; last-resort text-only rebuild")
-    pcall(function() ExcelAlt.bar:delete() end)
-    ExcelAlt.bar = hs.menubar.new()
-    if ExcelAlt.bar then
-      ExcelAlt.bar:setTitle(APPNAME)
-      ExcelAlt.bar:setMenu(menubarMenu)
-    end
-  end
+-- The launch-time agent->regular-app transform destroys status items
+-- created before it completes, so this waits. One creation, one ladder.
+hs.timer.doAfter(2, function()
+  logMenubarEnvironment()
+  setupMenubar(1)
 end)
 
 -- Cmd+Q support: a hotkey active ONLY while ExcelAlt is the frontmost app
@@ -2260,7 +2333,11 @@ local function grantReady()
   hideEngineWindows()
   hs.timer.doAfter(1, hideEngineWindows)
   pcall(pushCatalog)
-  hs.timer.doAfter(1, setupMenubar)
+  -- Only rebuild if the item is not already there. The old code rebuilt
+  -- unconditionally, destroying a working item to replace it with another.
+  hs.timer.doAfter(1, function()
+    if ExcelAlt.menubarStatus ~= "ok" then setupMenubar(1) end
+  end)
   hs.alert.show(APPNAME .. " ready — tap ⌥ in Excel, PowerPoint or Word", 1.5)
 end
 
@@ -2324,6 +2401,9 @@ ExcelAlt._test = {
   safely       = safely,
   isNewer        = isNewer,
   appcastInfo    = appcastInfo,
+  setupMenubar   = setupMenubar,
+  purgeStaleStatusItemPrefs = purgeStaleStatusItemPrefs,
+  MENUBAR_AUTOSAVE = MENUBAR_AUTOSAVE,
   checkForUpdates = checkForUpdates,
   autoCheck      = autoCheck,
   startAutoUpdates = startAutoUpdates,
