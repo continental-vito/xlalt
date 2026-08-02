@@ -79,6 +79,9 @@ BASE=$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0)
 BASE="${BASE#v}"
 SHA=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)
+# Branches are named menubar/... and the branch goes into
+# CFBundleShortVersionString, which should not carry a path separator.
+BRANCH=$(printf '%s' "$BRANCH" | tr '/' '-')
 DIRTY=""
 [ -n "$(git status --porcelain 2>/dev/null)" ] && DIRTY="+"
 export XL_VERSION="${BASE}-dev.${BRANCH}.${SHA}${DIRTY}"
