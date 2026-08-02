@@ -52,9 +52,18 @@ jobs:
           fi
           echo "launcher: $(lipo -archs "$APP/Contents/MacOS/ExcelAlt")"
 
+      # Artifact names cannot contain a slash, and these branches are named
+      # menubar/... — which is why the first successful build still failed
+      # to publish anything.
+      - name: Compose a filesystem-safe artifact name
+        id: artifact
+        run: |
+          echo "name=CobAlt-dev-$(echo "$GITHUB_REF_NAME" | tr '/' '-')-$GITHUB_RUN_NUMBER" \
+            >> "$GITHUB_OUTPUT"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: CobAlt-dev-${{ github.ref_name }}-${{ github.run_number }}
+          name: ${{ steps.artifact.outputs.name }}
           path: dist/XL-dev.dmg
           retention-days: 14
           if-no-files-found: error
