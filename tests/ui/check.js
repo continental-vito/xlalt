@@ -158,21 +158,19 @@ check('a re-render preserves what the user typed in the search box',
   d.getElementById('search-excel').value === 'paste');
 
 // --------------------------------------------------------------- updates
-// The menu bar item does not appear on this app (macOS lays the status
-// item out at zero height), so the manager window is the only reliable
-// way to reach the updater. The runtime's own Check for Updates goes to
-// Sparkle, which cannot install here.
+// The update entry point is the menu bar item, which works again as of
+// v3.14 — the launcher was what stopped macOS laying the status item
+// out. So the header link is gone: two entry points to the same updater
+// was one more than the header had room for.
 check('the window carries the product name',
   /CobAlt Shortcut Manager/.test(d.querySelector('header h1').textContent),
   d.querySelector('header h1').textContent);
-check('the header offers a way to check for updates',
-  !!d.querySelector('header .right a') &&
-  /check for updates/i.test(d.querySelector('header .right a').textContent));
-d.querySelector('header .right a').click();
-check('the update link reaches the engine',
-  sent.some(m => m.op === 'checkupdates'), JSON.stringify(sent[sent.length - 1]));
+check('the header no longer duplicates the menu bar updater',
+  !d.querySelector('header .right a'),
+  d.querySelector('header .right a') &&
+    d.querySelector('header .right a').textContent);
 w.setVersion('3.6');
-check('the running version is shown beside it, under the product name',
+check('the running version is still shown, under the product name',
   d.getElementById('ver').textContent.includes('CobAlt') &&
   d.getElementById('ver').textContent.includes('3.6'),
   d.getElementById('ver').textContent);

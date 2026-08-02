@@ -180,22 +180,36 @@ def filled_corgi(px, seal=18):
     return flat.resize((px, px), Image.LANCZOS)
 
 
+SRC_PX = 716
+
+
 def menubar_template(px):
     """Menu bar icons use the ALPHA channel only — macOS recolours them for
-    light and dark bars, so the white source and the ink source would give
-    identical results. The line art is ~18px wide at 716px, a fraction of
-    a pixel at menu bar size, so strokes are thickened before downsampling
-    or they simply disappear. The factor is tuned so the ears stay separate
-    at 18px rather than merging into a blob.
+    light and dark bars.
+
+    This used to take the alpha of the line art, which made the icon read
+    as an outline: thin strokes on nothing. The manager header shows a
+    FILLED corgi, and the two should match. So the mask here is the
+    enclosed fill instead, with the strokes knocked back OUT of it — the
+    same shape, rendered as a solid silhouette with the eyes, nose and
+    blaze as gaps.
+
+    The knockouts are eroded before downsampling. A stroke that is a
+    fraction of a pixel wide at 18pt simply vanishes, and the icon
+    collapses into an unreadable blob.
     """
-    src = Image.open(WHITE).convert("RGBA")
-    alpha = src.getchannel("A")
-    grow = max(1, round(src.width / px / 5))
-    alpha = alpha.filter(ImageFilter.MaxFilter(grow * 2 + 1))
-    alpha = alpha.resize((px, px), Image.LANCZOS)
-    alpha = alpha.point(lambda v: min(255, int(v * 1.35)))
+    big = filled_corgi(SRC_PX)
+    alpha = big.getchannel("A").point(lambda v: 255 if v > 128 else 0)
+    lum = big.convert("L")
+    # White fill stays; black strokes drop out.
+    mask = ImageChops.multiply(alpha, lum.point(lambda v: 255 if v > 140 else 0))
+    # MinFilter erodes the white, which is what widens the knockouts.
+    grow = max(1, round(SRC_PX / px / 6))
+    mask = mask.filter(ImageFilter.MinFilter(grow * 2 + 1))
+    mask = mask.resize((px, px), Image.LANCZOS)
+    mask = mask.point(lambda v: min(255, int(v * 1.2)))
     out = Image.new("RGBA", (px, px), (255, 255, 255, 0))
-    out.putalpha(alpha)
+    out.putalpha(mask)
     return out
 
 

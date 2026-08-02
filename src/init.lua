@@ -1145,7 +1145,6 @@ nav.tabs button.on { background:var(--paper); color:var(--accent); }
     <p id="sub">Tap ⌥ in Excel, then type a sequence. Changes apply instantly.</p></div>
   <div class="right">
     <span class="v" id="ver"></span>
-    <a onclick="send({op:'checkupdates'})">Check for updates</a>
   </div>
 </header>
 <div id="ax">

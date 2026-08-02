@@ -115,7 +115,13 @@ mkdir -p "$HOME/Applications"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 # Drop the old record before the bundle disappears, or LaunchServices keeps
 # pointing at a path that no longer exists.
-[ -x "$LSREGISTER" ] && [ -d "$DEV_APP" ] && "$LSREGISTER" -u "$DEV_APP" 2>/dev/null
+# set -euo pipefail is on, and this chain returns 1 whenever the dev app
+# is not already installed -- which aborts the script between deleting the
+# old app and installing the new one. On a first-ever build, or after any
+# build that failed partway, that leaves no app at all.
+if [ -x "$LSREGISTER" ] && [ -d "$DEV_APP" ]; then
+  "$LSREGISTER" -u "$DEV_APP" 2>/dev/null || true
+fi
 rm -rf "$DEV_APP"
 # ditto, not cp: the bundle signature lives in extended attributes.
 ditto "dist/${XL_BUNDLE_NAME}.app" "$DEV_APP"
