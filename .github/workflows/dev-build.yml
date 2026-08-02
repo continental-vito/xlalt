@@ -20,11 +20,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Tests
-        run: |
-          brew list lua &>/dev/null || brew install lua
-          lua tests/run_tests.lua
-
+      # The suite is deliberately NOT re-run here. ci.yml runs the identical
+      # Lua suite on every push, including this branch, on a runner that
+      # already has Lua. This step used to install Lua through Homebrew, and
+      # it is the only reason this workflow had never once produced an
+      # artifact: both previous runs died here before building anything.
       - name: Build the dev app
         env:
           XL_BUNDLE_ID: com.corgianalyst.excel-alt-shortcuts.dev
