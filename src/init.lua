@@ -2139,17 +2139,6 @@ local function forceStatusItemVisible()
   end)
 end
 
--- Last resort: drop every status-item preference, ours included, so the
--- next item is created with no remembered state of any kind.
-local function forgetStatusItemPrefs()
-  pcall(function()
-    for _, k in ipairs(hs.settings.getKeys() or {}) do
-      if k:find("^NSStatusItem") then hs.settings.clear(k) end
-    end
-  end)
-  dlog("menubar: cleared every status-item preference, ours included")
-end
-
 local function describeFrame(fr)
   if not fr then return "n/a" end
   return string.format("(%.0f,%.0f %.0fx%.0f)", fr.x, fr.y, fr.w, fr.h)
@@ -2242,77 +2231,51 @@ local function createMenubarItem(withIcon, useAutosave)
   return true
 end
 
--- Ladder, each rung given a second to settle:
---   1. icon, remembered position
---   2. icon again after a remove/return cycle, forcing a fresh layout pass
---   3. text only, the most primitive form a status item takes
---   4. text, with every remembered status-item preference thrown away and
---      no autosave name — so macOS has nowhere to record it as hidden
+-- One creation, one check, then stop.
 --
--- If rung 4 fails the whole ladder is retried later. The menu bar at
--- login is not the menu bar a minute in: other agents are still claiming
--- space, and an item that did not fit at t=2s may fit at t=60s. Capped,
--- because retrying forever is how this hid for six releases.
-local RETRY_DELAYS = { 15, 60, 180 }
+-- This used to climb a ladder — re-layout, text fallback, dropping the
+-- remembered identity — and then retry the whole thing at 15s, 60s and
+-- 180s. Two things killed it. None of those rungs ever produced a
+-- laid-out item on the machine that actually fails. And repeatedly
+-- adding and removing status items visibly damages the system menu bar:
+-- on macOS 26.5.1 the bar stopped drawing at all until clicked, for as
+-- long as the ladder kept running. Churn is not free, and a fallback
+-- that has never once worked is not worth what it costs.
+--
+-- A guard, because this is reachable from both the startup timer and the
+-- Accessibility path. Both fired, so two ladders ran at once — which is
+-- what did the damage.
 local setupMenubar
-setupMenubar = function(rung, pass)
-  rung = rung or 1
-  pass = pass or 1
-  local withIcon    = (rung < 3)
-  local useAutosave = (rung < 4)
+setupMenubar = function()
+  if ExcelAlt.barSetupRan then
+    dlog("menubar: setup already ran this launch; ignoring the second call")
+    return
+  end
+  ExcelAlt.barSetupRan = true
 
-  if rung == 4 then forgetStatusItemPrefs() end
-
-  if not createMenubarItem(withIcon, useAutosave) then
+  if not createMenubarItem(true, true) then
     ExcelAlt.menubarStatus = "failed"
     return
   end
-  dlog(string.format("menubar: pass %d rung %d created (%s, %s)", pass, rung,
-                     withIcon and "icon" or "text",
-                     useAutosave and "autosave" or "no autosave"))
+  dlog("menubar: item created")
 
   ExcelAlt.barCheck = hs.timer.doAfter(1.0, function()
     local healthy, fr = menubarHealthy()
-    dlog(string.format("menubar: pass %d rung %d healthy=%s frame=%s",
-                       pass, rung, tostring(healthy), describeFrame(fr)))
+    dlog(string.format("menubar: healthy=%s frame=%s",
+                       tostring(healthy), describeFrame(fr)))
     if healthy then
       ExcelAlt.menubarStatus = "ok"
-      dumpStatusItemPrefs("settled")
       return
     end
-
-    if rung == 1 then
-      dlog("menubar: forcing a re-layout (remove then return)")
-      pcall(function() ExcelAlt.bar:removeFromMenuBar() end)
-      ExcelAlt.barRetry = hs.timer.doAfter(0.5, function()
-        pcall(function() ExcelAlt.bar:returnToMenuBar() end)
-        ExcelAlt.barRetry2 = hs.timer.doAfter(1.0, function()
-          local ok2, fr2 = menubarHealthy()
-          dlog("menubar: after re-layout healthy=" .. tostring(ok2) ..
-               " frame=" .. describeFrame(fr2))
-          if ok2 then
-            ExcelAlt.menubarStatus = "ok"
-          else
-            setupMenubar(3, pass)
-          end
-        end)
-      end)
-    elseif rung == 3 then
-      setupMenubar(4, pass)
-    else
-      local delay = RETRY_DELAYS[pass]
-      if delay then
-        ExcelAlt.menubarStatus = "retrying"
-        dlog(string.format("menubar: nothing laid out; retrying in %ds", delay))
-        ExcelAlt.barLater = hs.timer.doAfter(delay, function()
-          setupMenubar(1, pass + 1)
-        end)
-      else
-        ExcelAlt.menubarStatus = "failed"
-        dumpStatusItemPrefs("gave up")
-        dlog("menubar: still not laid out after " .. pass .. " passes; stopping")
-      end
-    end
+    -- Leaving a zero-height item registered is worse than having none:
+    -- the system still has to lay it out, and that is what the menu bar
+    -- was choking on.
+    pcall(function() ExcelAlt.bar:delete() end)
+    ExcelAlt.bar = nil
+    ExcelAlt.menubarStatus = "failed"
+    dumpStatusItemPrefs("gave up")
+    dlog("menubar: not laid out; item removed. "
+         .. "The app is usable from its window and Dock icon.")
   end)
 end
 
@@ -2412,7 +2375,7 @@ pcall(openManager)
 -- ladder we did see was started from the Accessibility path instead.
 ExcelAlt.startupBar = hs.timer.doAfter(2, function()
   logMenubarEnvironment()
-  setupMenubar(1)
+  setupMenubar()
 end)
 
 -- Cmd+Q support: a hotkey active ONLY while ExcelAlt is the frontmost app
@@ -2444,7 +2407,9 @@ local function grantReady()
   -- Only rebuild if the item is not already there. The old code rebuilt
   -- unconditionally, destroying a working item to replace it with another.
   hs.timer.doAfter(1, function()
-    if ExcelAlt.menubarStatus ~= "ok" then setupMenubar(1) end
+    -- Guarded inside: if the startup timer already ran it, this is a
+    -- no-op. Both firing at once is what damaged the menu bar.
+    setupMenubar()
   end)
   hs.alert.show(APPNAME .. " ready — tap ⌥ in Excel, PowerPoint or Word", 1.5)
 end

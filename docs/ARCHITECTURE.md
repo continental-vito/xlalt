@@ -14,38 +14,57 @@ Version 10 violated rule 2 and froze typing machine-wide; the v11 architecture a
 
 ## The menu bar item
 
-The symptom was an item that reported `isInMenuBar() == true` with a frame of
-`(0,956 69x0)` — present, zero height, invisible. It survived reinstalls, which
-is the detail that matters.
+Not solved. What is known, so nobody re-runs these experiments:
 
-macOS records status-item visibility under the autosave name, in the **app's
-user defaults**. Those live in `~/Library/Preferences`, not in the bundle, so
-replacing or reinstalling the app does not clear them. Once
-`NSStatusItem Visible CobAltStatusItem` is written `false` — a ⌘-drag off the
-bar, or macOS deciding the item did not fit — the item never returns.
+The item is created and sized correctly, and macOS never lays it out:
 
-And `purgeStaleStatusItemPrefs` **deliberately kept our keys**, to preserve the
-remembered position. That was a correct fix for a real earlier bug (per-launch
-autosave names littering the defaults), but it also made a single `false`
-permanent and reinstall-proof.
+| content | frame |
+|---|---|
+| icon | `(0,956 34x0)` |
+| text | `(0,956 61x0)` |
 
-So the ladder now reads:
+Width tracks the content; height is always zero; `x` is always 0. Reported on
+macOS 26.5.1, single built-in display, `barHeight=33`.
 
-1. icon, remembered position — with `Visible` forced back to `true` first
-2. icon again after a remove/return cycle, forcing a fresh layout pass
-3. text only, the most primitive form a status item takes
-4. text, every remembered status-item preference dropped, **no autosave name**
-   — macOS then has nowhere to record it as hidden
+**Ruled out by evidence, not by argument:**
 
-If rung 4 fails the whole ladder retries at 15s, 60s and 180s. The menu bar at
-login is not the menu bar a minute in: other agents are still claiming space,
-and an item that did not fit at t=2s may fit later. Capped at three passes,
-because retrying forever is how this stayed invisible for six releases.
+- *A persisted "hidden" flag.* `launcher.c` already deletes every
+  `NSStatusItem*` preference on every launch, and the log confirms
+  `pref[startup] none present`. There is nothing to override.
+- *The Tahoe-wide bug* where no third-party icon appears. Six other apps are
+  listed and enabled under Control Center → Allow in the Menu Bar.
+- *The launcher's `execv`.* `XL_NO_LAUNCHER=1` points `CFBundleExecutable`
+  straight at the engine so no exec happens. No change.
+- *Icon rendering.* Rungs using a plain text title failed identically, and the
+  icon assets are valid 18/36pt templates with alpha.
 
-`dumpStatusItemPrefs` logs every status-item key **with its value**, at startup
-and again when the item settles or the ladder gives up. The previous code only
-counted them, which cannot distinguish "has a remembered position" from "is
-remembered as hidden" — opposite problems with the same count.
+**The one solid clue:** the app does not appear in Control Center → Allow in
+the Menu Bar **at all** — absent, not switched off — while other third-party
+apps are listed. macOS is not registering this process as an application that
+owns a status item. Why is not yet known.
+
+### What the ladder cost
+
+Earlier versions climbed a ladder (re-layout, text fallback, dropping the
+remembered identity) and retried it at 15s, 60s and 180s. Two findings ended
+that:
+
+- No rung ever produced a laid-out item on the machine that fails.
+- Repeatedly adding and removing status items **damages the system menu bar**.
+  On macOS 26.5.1 the bar stopped drawing until clicked, for as long as the
+  ladder ran. Two ladders ran at once — one from the startup timer, one from
+  the Accessibility path — because retaining a previously-collected timer made
+  both fire.
+
+So: one creation, one check, and if it is not laid out the item is **deleted**
+rather than left registered, since a zero-height item still occupies a slot the
+system has to lay out. A second call in the same launch is a no-op. Regression
+tests cover the count, the deletion and the guard; against the old code the
+guard test creates six items.
+
+Next step, if it is picked up again: instrument LaunchServices registration
+rather than the status item. And a Developer ID signature may change how the
+app is registered, so it is worth re-checking after signing rather than before.
 
 ## Naming
 
