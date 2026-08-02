@@ -2159,15 +2159,30 @@ end
 -- 37-38pt of it, an unnotched one about 24. Logged once so a report from
 -- a machine we cannot see says which kind it came from.
 local function logMenubarEnvironment()
-  pcall(function()
+  -- Separate pcalls on purpose. This was one block, and adding the OS
+  -- version to it meant a single throw silenced the screen geometry too
+  -- — so the run that mattered logged nothing at all. Failures are
+  -- reported rather than swallowed.
+  local ok, err = pcall(function()
     local s = hs.screen.mainScreen()
     local f, ff = s:frame(), s:fullFrame()
     dlog(string.format(
-      "menubar: screen=%s full=%.0fx%.0f usable=%.0fx%.0f barHeight=%.0f screens=%d os=%s",
-      tostring(s:name()), ff.w, ff.h, f.w, f.h, f.y - ff.y, #hs.screen.allScreens(),
-      tostring(hs.host.operatingSystemVersionString and
-               hs.host.operatingSystemVersionString() or "?")))
+      "menubar: screen=%s full=%.0fx%.0f usable=%.0fx%.0f barHeight=%.0f screens=%d",
+      tostring(s:name()), ff.w, ff.h, f.w, f.h, f.y - ff.y, #hs.screen.allScreens()))
   end)
+  if not ok then dlog("menubar: screen probe failed: " .. tostring(err)) end
+
+  ok, err = pcall(function()
+    local v = hs.host and hs.host.operatingSystemVersion
+              and hs.host.operatingSystemVersion()
+    if type(v) == "table" then
+      dlog(string.format("menubar: macOS %s.%s.%s",
+                         tostring(v.major), tostring(v.minor), tostring(v.patch)))
+    else
+      dlog("menubar: macOS version unavailable")
+    end
+  end)
+  if not ok then dlog("menubar: version probe failed: " .. tostring(err)) end
 end
 
 -- Present AND laid out. isInMenuBar() alone is not enough: it has
