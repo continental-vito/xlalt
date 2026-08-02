@@ -696,7 +696,22 @@ do
   check("the script waits for this process before touching the bundle",
     sh:find("kill %-0") ~= nil and sh:find("ditto") ~= nil)
   check("the script rolls back rather than leaving no app",
-    sh:find('mv "%$DEST.old" "%$DEST"') ~= nil)
+    sh:find('mv "%$FINAL.old" "%$FINAL"') ~= nil)
+  -- The bundle filename is what Finder and the Dock show, so a release
+  -- that renames it has to rename the install too, or the rename is
+  -- invisible to everyone who already has the app.
+  check("it installs under the name the archive uses",
+    sh:find('FINAL=.-basename "%$NEW"') ~= nil)
+  check("it refuses to touch the install if the download has no engine",
+    sh:find('%-x "%$FINAL.new/Contents/MacOS/Hammerspoon"') ~= nil)
+  check("the previous bundle goes only after the new one is in place",
+    sh:find('if mv "%$FINAL.new" "%$FINAL"; then') ~= nil
+      and sh:find('rm %-rf "%$DEST"') ~= nil)
+  check("and only if the new one actually has an engine",
+    sh:find('%-x "%$FINAL/Contents/MacOS/Hammerspoon" %]; then') ~= nil)
+  -- Whatever goes wrong, something openable must remain.
+  check("every failure path reopens an app",
+    select(2, sh:gsub('/usr/bin/open "%$DEST"', "")) >= 3)
   check("the script clears quarantine and relaunches",
     sh:find("com.apple.quarantine") ~= nil and sh:find("open") ~= nil)
 end

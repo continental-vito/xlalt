@@ -1826,22 +1826,46 @@ echo "--- swap started $(date) ---"
 i=0
 while kill -0 "$PID" 2>/dev/null && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done
 sleep 0.5
-rm -rf "$DEST.old" "$DEST.new"
-/usr/bin/ditto "$NEW" "$DEST.new" || { echo "ditto failed"; /usr/bin/open "$DEST"; exit 1; }
-if mv "$DEST" "$DEST.old"; then
-  if mv "$DEST.new" "$DEST"; then
-    rm -rf "$DEST.old"
-  else
-    echo "swap failed, rolling back"
-    mv "$DEST.old" "$DEST"
+# The bundle filename can change between releases (ExcelAlt.app ->
+# CobAlt.app). Finder, the Dock and the app switcher all show the
+# FILENAME, so an install that keeps the old name never really gets
+# renamed. Install under whatever the archive calls itself.
+#
+# Every failure path here must leave a working app behind. The old bundle
+# is only deleted once the new one is in place AND looks like an app.
+FINAL="$(dirname "$DEST")/$(basename "$NEW")"
+[ "$FINAL" != "$DEST" ] && echo "renaming: $DEST -> $FINAL"
+rm -rf "$FINAL.old" "$FINAL.new"
+/usr/bin/ditto "$NEW" "$FINAL.new" || { echo "ditto failed"; /usr/bin/open "$DEST"; exit 1; }
+if [ ! -x "$FINAL.new/Contents/MacOS/Hammerspoon" ]; then
+  echo "the extracted bundle has no engine; not touching the installed app"
+  rm -rf "$FINAL.new"
+  /usr/bin/open "$DEST"
+  exit 1
+fi
+if [ -e "$FINAL" ] && ! mv "$FINAL" "$FINAL.old"; then
+  echo "could not move the old bundle aside"
+  rm -rf "$FINAL.new"
+  /usr/bin/open "$DEST"
+  exit 1
+fi
+if mv "$FINAL.new" "$FINAL"; then
+  rm -rf "$FINAL.old"
+  # Only now is the previously-named bundle safe to remove.
+  if [ "$FINAL" != "$DEST" ] && [ -e "$DEST" ] && [ -x "$FINAL/Contents/MacOS/Hammerspoon" ]; then
+    echo "removing the previous bundle at $DEST"
+    rm -rf "$DEST"
   fi
 else
-  echo "could not move the old bundle aside"
-  rm -rf "$DEST.new"
+  echo "swap failed, rolling back"
+  [ -e "$FINAL.old" ] && mv "$FINAL.old" "$FINAL"
+  rm -rf "$FINAL.new"
+  /usr/bin/open "$DEST"
+  exit 1
 fi
-/usr/bin/xattr -dr com.apple.quarantine "$DEST" 2>/dev/null
+/usr/bin/xattr -dr com.apple.quarantine "$FINAL" 2>/dev/null
 echo "relaunching"
-/usr/bin/open "$DEST"
+/usr/bin/open "$FINAL"
 ]], APPNAME, hs.processInfo.processID, dest, newApp, SUPPORT .. "/update.log"))
   f:close()
   return path

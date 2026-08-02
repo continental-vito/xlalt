@@ -26,7 +26,10 @@ for arg in "$@"; do
   esac
 done
 
-DEV_APP="$HOME/Applications/ExcelAlt-dev.app"
+DEV_APP="$HOME/Applications/CobAlt-dev.app"
+# Dev installs before this were ExcelAlt-dev.app. Removed on build so a
+# rename does not leave two dev apps sharing one set of shortcuts.
+OLD_DEV_APP="$HOME/Applications/ExcelAlt-dev.app"
 LIVE_CONFIG="$HOME/Library/Application Support/ExcelAlt/shortcuts.json"
 DEV_SUPPORT="$HOME/Library/Application Support/ExcelAlt-dev"
 BACKUPS="$HOME/.xlalt-backups"
@@ -36,7 +39,7 @@ BACKUPS="$HOME/.xlalt-backups"
 # data in ExcelAlt-dev/ rather than ExcelAlt/. The released app in
 # /Applications is never read from, written to, or replaced.
 export XL_BUNDLE_ID="com.corgianalyst.excel-alt-shortcuts.dev"
-export XL_BUNDLE_NAME="ExcelAlt-dev"
+export XL_BUNDLE_NAME="CobAlt-dev"
 export XL_DISPLAY_NAME="CobAlt (dev)"
 export XL_NO_UPDATES=1
 export XL_DMG_NAME="XL-dev"
@@ -123,6 +126,10 @@ if [ -x "$LSREGISTER" ] && [ -d "$DEV_APP" ]; then
   "$LSREGISTER" -u "$DEV_APP" 2>/dev/null || true
 fi
 rm -rf "$DEV_APP"
+if [ -x "$LSREGISTER" ] && [ -d "$OLD_DEV_APP" ]; then
+  "$LSREGISTER" -u "$OLD_DEV_APP" 2>/dev/null || true
+fi
+rm -rf "$OLD_DEV_APP"
 # ditto, not cp: the bundle signature lives in extended attributes.
 ditto "dist/${XL_BUNDLE_NAME}.app" "$DEV_APP"
 

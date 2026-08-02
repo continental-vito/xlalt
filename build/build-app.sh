@@ -12,9 +12,13 @@ HS_URL="https://github.com/Hammerspoon/hammerspoon/releases/download/${HS_VERSIO
 # own preferences, its own Accessibility grant and its own data directory),
 # its own name in the Dock. Unset = the real release identity.
 BID="${XL_BUNDLE_ID:-com.corgianalyst.excel-alt-shortcuts}"
-XL_BUNDLE_NAME="${XL_BUNDLE_NAME:-ExcelAlt}"
+# The bundle FILENAME is what Finder, the Dock and the app switcher show.
+# CFBundleDisplayName does not override it without localised display
+# names, and those did not work here, so the file is named for the
+# product. The updater renames an existing install to match.
+XL_BUNDLE_NAME="${XL_BUNDLE_NAME:-CobAlt}"
 XL_DISPLAY_NAME="${XL_DISPLAY_NAME:-CobAlt}"
-XL_DMG_NAME="${XL_DMG_NAME:-XL}"
+XL_DMG_NAME="${XL_DMG_NAME:-CobAlt}"
 XL_VERSION="${XL_VERSION:-2.5}"
 XL_BUILD="${XL_BUILD:-1}"
 SPARKLE_PUBKEY="c2aHOy058alqEV8VJ/7MzioCtONcOmQWU0Df0LiMGac="

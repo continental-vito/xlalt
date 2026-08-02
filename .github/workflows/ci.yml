@@ -21,6 +21,16 @@ jobs:
   # The app menu, About/Hide/Quit and the window titles live in compiled
   # nibs. Editing them wrong is either an app that will not start or an
   # app with dead menu items, and neither is visible to the Lua suite.
+  # The Lua suite checks the swap script's TEXT. This runs it, against real
+  # directories, and checks what is left on disk — including the paths
+  # where the update fails and the installed app has to survive.
+  update-swap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.4
+      - run: bash tests/swap_test.sh
+
   nib-rename:
     runs-on: ubuntu-latest
     steps:
