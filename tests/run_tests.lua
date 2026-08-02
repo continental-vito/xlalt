@@ -853,6 +853,47 @@ check("it falls back to a text-only item",
 check("and stops rather than retrying forever",
   #mock.log.menubars <= 3, "items created: " .. #mock.log.menubars)
 
+-- macOS records status-item visibility in the app's user defaults, which
+-- live outside the bundle. A single "hidden" there outlives reinstalls,
+-- and the purge below deliberately keeps our keys — so the flag has to be
+-- overridden explicitly or the item can never come back.
+mock.menubarFrame = { x = 1200, y = 0, w = 24, h = 24 }
+mock.settings = { ["NSStatusItem Visible " .. T.MENUBAR_AUTOSAVE] = false }
+mock.log.menubars = {}
+ExcelAlt.menubarStatus = nil
+T.setupMenubar(1) ; mock.flushTimers(3)
+check("an item remembered as hidden is forced visible again",
+  mock.settings["NSStatusItem Visible " .. T.MENUBAR_AUTOSAVE] == true,
+  tostring(mock.settings["NSStatusItem Visible " .. T.MENUBAR_AUTOSAVE]))
+check("and it then lays out normally",
+  ExcelAlt.menubarStatus == "ok", tostring(ExcelAlt.menubarStatus))
+
+-- Last resort: if nothing laid out even as text, drop every remembered
+-- preference and create the item with no autosave name at all, so macOS
+-- has nowhere to record it as hidden.
+mock.menubarFrame = { x = 0, y = 956, w = 69, h = 0 }
+mock.settings = {
+  ["NSStatusItem Visible " .. T.MENUBAR_AUTOSAVE] = false,
+  ["NSStatusItem Preferred Position " .. T.MENUBAR_AUTOSAVE] = 300,
+}
+mock.log.menubars = {}
+ExcelAlt.menubarStatus = nil
+T.setupMenubar(1)
+for _ = 1, 6 do mock.flushTimers(5) end
+check("the last resort abandons the remembered identity",
+  mock.log.menubars[#mock.log.menubars] ~= nil
+    and mock.log.menubars[#mock.log.menubars].autosaveName == nil,
+  tostring(mock.log.menubars[#mock.log.menubars]
+           and mock.log.menubars[#mock.log.menubars].autosaveName))
+check("and clears every remembered status-item preference",
+  mock.settings["NSStatusItem Preferred Position " .. T.MENUBAR_AUTOSAVE] == nil)
+
+-- A failure is not the end of the launch any more: the menu bar at login
+-- is not the menu bar a minute in.
+check("a total failure schedules another attempt rather than giving up",
+  ExcelAlt.menubarStatus == "retrying", tostring(ExcelAlt.menubarStatus))
+mock.settings = {}
+
 -- Purging must remove the per-launch litter and keep the item's own key,
 -- which the previous code cleared along with everything else.
 mock.settings = {

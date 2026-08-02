@@ -12,6 +12,41 @@ The engine listens to keyboard events through macOS event taps. macOS **holds ke
 
 Version 10 violated rule 2 and froze typing machine-wide; the v11 architecture and test `[1]`/`[2]` groups exist so that can't regress.
 
+## The menu bar item
+
+The symptom was an item that reported `isInMenuBar() == true` with a frame of
+`(0,956 69x0)` — present, zero height, invisible. It survived reinstalls, which
+is the detail that matters.
+
+macOS records status-item visibility under the autosave name, in the **app's
+user defaults**. Those live in `~/Library/Preferences`, not in the bundle, so
+replacing or reinstalling the app does not clear them. Once
+`NSStatusItem Visible CobAltStatusItem` is written `false` — a ⌘-drag off the
+bar, or macOS deciding the item did not fit — the item never returns.
+
+And `purgeStaleStatusItemPrefs` **deliberately kept our keys**, to preserve the
+remembered position. That was a correct fix for a real earlier bug (per-launch
+autosave names littering the defaults), but it also made a single `false`
+permanent and reinstall-proof.
+
+So the ladder now reads:
+
+1. icon, remembered position — with `Visible` forced back to `true` first
+2. icon again after a remove/return cycle, forcing a fresh layout pass
+3. text only, the most primitive form a status item takes
+4. text, every remembered status-item preference dropped, **no autosave name**
+   — macOS then has nowhere to record it as hidden
+
+If rung 4 fails the whole ladder retries at 15s, 60s and 180s. The menu bar at
+login is not the menu bar a minute in: other agents are still claiming space,
+and an item that did not fit at t=2s may fit later. Capped at three passes,
+because retrying forever is how this stayed invisible for six releases.
+
+`dumpStatusItemPrefs` logs every status-item key **with its value**, at startup
+and again when the item settles or the ladder gives up. The previous code only
+counted them, which cannot distinguish "has a remembered position" from "is
+remembered as hidden" — opposite problems with the same count.
+
 ## Naming
 
 The app displays as **CobAlt**. Several older names are kept deliberately and should not be "tidied up":
