@@ -50,7 +50,7 @@ jobs:
           if /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$APP/Contents/Info.plist" 2>/dev/null; then
             echo "dev build carries an update feed" >&2; exit 1
           fi
-          echo "launcher: $(lipo -archs "$APP/Contents/MacOS/ExcelAlt")"
+          echo "engine: $(lipo -archs "$APP/Contents/MacOS/Hammerspoon")"
 
       # Artifact names cannot contain a slash, and these branches are named
       # menubar/... — which is why the first successful build still failed

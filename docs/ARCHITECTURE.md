@@ -14,75 +14,71 @@ Version 10 violated rule 2 and froze typing machine-wide; the v11 architecture a
 
 ## The menu bar item
 
-Not solved. What is known, so nobody re-runs these experiments:
+Fixed in v3.14. The cause was the launcher.
 
-The item is created and sized correctly, and macOS never lays it out:
+The symptom was an item that reported `isInMenuBar() == true` with a frame of
+`(0,956 34x0)` — created, correctly sized, never given any height — and an app
+that did not appear under Control Center → **Allow in the Menu Bar** at all.
+Absent, not switched off.
 
-| content | frame |
+`build/bisect-menubar.sh` settled it by applying the build steps cumulatively
+to an unmodified runtime, each variant re-signed so it could actually launch:
+
+| variant | status item |
 |---|---|
-| icon | `(0,956 34x0)` |
-| text | `(0,956 61x0)` |
+| pristine | works |
+| + ad-hoc re-signature | works |
+| + our bundle identifier | works |
+| + `LSUIElement` removed | works |
+| **+ our launcher** | **fails** |
+| + rewritten nibs | fails |
 
-Width tracks the content; height is always zero; `x` is always 0. Reported on
-macOS 26.5.1, single built-in display, `barHeight=33`.
+So signing, the bundle identifier and the Dock icon were all innocent. It
+broke the moment a launcher sat in front of the engine — and not because of
+anything the launcher did: compiling out its `NSStatusItem` preference purge
+changed nothing. What remained is that the running executable was no longer
+the one `CFBundleExecutable` declares, and macOS 26 will not register a menu
+bar item for such a process.
 
-**Ruled out by evidence, not by argument:**
+### How it was removed
 
-- *A persisted "hidden" flag.* `launcher.c` already deletes every
-  `NSStatusItem*` preference on every launch, and the log confirms
-  `pref[startup] none present`. There is nothing to override.
-- *The Tahoe-wide bug* where no third-party icon appears. Six other apps are
-  listed and enabled under Control Center → Allow in the Menu Bar.
-- *The launcher's `execv`.* `XL_NO_LAUNCHER=1` points `CFBundleExecutable`
-  straight at the engine so no exec happens. No change.
-- *Icon rendering.* Rungs using a plain text title failed identically, and the
-  icon assets are valid 18/36pt templates with alpha.
+The launcher existed for one reason: to set `MJConfigFile` before the engine
+started, so the engine would find our `init.lua`. But `setup.lua` is *handed*
+`configdir` as an argument, and every other path it receives already points
+inside the bundle. So the build patches `setup.lua` to derive `configdir` from
+`frameworkspath`:
 
-**The one solid clue:** the app does not appear in Control Center → Allow in
-the Menu Bar **at all** — absent, not switched off — while other third-party
-apps are listed. macOS is not registering this process as an application that
-owns a status item. Why is not yet known.
+```lua
+configdir   = frameworkspath:gsub("/Frameworks$", "/Resources")
+fullpath    = configdir .. "/init.lua"
+prettypath  = fullpath
+hasinitfile = true
+```
 
-### What the ladder cost
+Nothing has to run before the engine, so nothing does. The engine is the
+bundle's main executable, under its own name, and the build asserts the patch
+applied — an unpatched `setup.lua` is an app that loads no config at all.
 
-Earlier versions climbed a ladder (re-layout, text fallback, dropping the
-remembered identity) and retried it at 15s, 60s and 180s. Two findings ended
-that:
+`build/launcher.c` is deleted. Recover it from history if ever needed. Its
+other duties moved: the runtime's own menu icon and console are turned off
+from Lua (`hs.menuIcon(false)`, `hs.closeConsole()`), and its
+`NSStatusItem` preference purge is simply gone — it was never needed.
 
-- No rung ever produced a laid-out item on the machine that fails.
-- Repeatedly adding and removing status items **damages the system menu bar**.
-  On macOS 26.5.1 the bar stopped drawing until clicked, for as long as the
-  ladder ran. Two ladders ran at once — one from the startup timer, one from
-  the Accessibility path — because retaining a previously-collected timer made
-  both fire.
+### Four wrong theories, recorded so they are not retried
 
-So: one creation, one check, and if it is not laid out the item is **deleted**
-rather than left registered, since a zero-height item still occupies a slot the
-system has to lay out. A second call in the same launch is a no-op. Regression
-tests cover the count, the deletion and the guard; against the old code the
-guard test creates six items.
+- *A persisted "hidden" flag.* There was never one to override; the launcher
+  already deleted those keys on every launch, and `pref[startup] none present`
+  confirmed it.
+- *The Tahoe-wide bug* where no third-party icon appears. Six other apps were
+  listed and working.
+- *`LSUIElement` / agent mode.* Restored it, verified it was `1`, no change.
+- *The preference purge itself.* Compiled it out, no change.
 
-### What boringNotch does differently
-
-boringNotch has no Apple Developer account, is ad-hoc signed, and calls exactly
-the same API — `NSStatusBar.system.statusItem(withLength:)`. It appears in
-Allow in the Menu Bar. We do not. So neither signing nor the API is the
-difference. One thing is:
-
-| | boringNotch | here |
-|---|---|---|
-| `LSUIElement` | `YES` | deleted by `build-app.sh`, to get a Dock icon |
-
-The runtime ships `LSUIElement`; we remove it. `XL_AGENT=1` puts it back, as a
-test. If the status item registers in agent mode, the Dock icon and the menu
-bar item are a trade rather than a bug — and the manager window would become
-the only way in, so it would need a reachable entry point first.
-
-Their `Info.plist` also answered the Sparkle failure: they set
-`SUEnableDownloaderService` and `SUEnableInstallerLauncherService`, which
-switch on the XPC services Sparkle's installer connects back through. Ours had
-neither, and the log said `agent connection was never initiated`. Both are now
-set unconditionally.
+Also learned the hard way: repeatedly adding and removing status items
+**damages the system menu bar** — on macOS 26.5.1 the bar stopped drawing until
+clicked. Setup now creates one item, checks it once, and deletes it if it is
+not laid out. A second call in the same launch is a no-op; two ran
+concurrently once, and that was what did the damage.
 
 ## Naming
 
@@ -91,7 +87,7 @@ The app displays as **CobAlt**. Several older names are kept deliberately and sh
 | stays | why |
 |---|---|
 | `com.corgianalyst.excel-alt-shortcuts` | Accessibility grants and Sparkle updates are keyed to the bundle identifier. Changing it drops every existing user's permission and breaks their update path. |
-| `ExcelAlt.app`, `ExcelAltCore` | Sparkle replaces the host bundle in place. Renaming the bundle inside an update archive, while the installed copy has the old name, risks the install. |
+| `ExcelAlt.app` | Sparkle replaces the host bundle in place. Renaming the bundle inside an update archive, while the installed copy has the old name, risks the install. |
 | `~/Library/Application Support/ExcelAlt/` | User data. Moving it needs a migration, not a rename. |
 | `ExcelAlt-update.zip`, `XL.dmg` | `release.yml` uploads these names and the appcast points at them. Existing download links use them. |
 | `ExcelAlt` (the Lua state table) | Internal only. |
@@ -175,7 +171,7 @@ The manager is ~400 lines of JavaScript embedded in `init.lua` as a string, gene
 
 - macOS keys **preferences** and the **Accessibility grant** by bundle id, so the dev build gets its own of each and cannot disturb the released app's.
 - `init.lua` checks for the `.dev` suffix and puts all state in `~/Library/Application Support/ExcelAlt-dev/` — its own `shortcuts.json`, `prefs.json` and `debug.log`.
-- `launcher.c` checks the same suffix and uses `~/.hammerspoon-xldev` as its fallback config directory, so an ignored `MJConfigFile` cannot make one build load the other's engine (see mistake #5).
+- The config now lives inside each bundle and is resolved from `frameworkspath`, so a dev build and a release build cannot load each other's engine no matter what preferences say.
 - `XL_NO_UPDATES=1` strips `SUFeedURL`, so Sparkle in a dev build has no feed to check.
 
 Both apps can therefore be installed at once. They should not be *running* at once: two engines watching Excel would both fire on every sequence.

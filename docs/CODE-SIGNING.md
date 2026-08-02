@@ -143,7 +143,7 @@ In `build/build-app.sh`:
   `--options runtime --timestamp`, and delete the keychain afterwards.
 - Sign **inside-out**: nested dylibs and `.so` modules, then
   `Sparkle.framework` and its `Updater.app` and XPC services, then
-  `ExcelAltCore`, then the outer bundle last.
+  the engine binary, then the outer bundle last.
 - **Drop the custom `-r` designated requirement.** It exists only because
   ad-hoc signing has no anchor. A real certificate produces a proper
   requirement automatically, and it is strictly better.

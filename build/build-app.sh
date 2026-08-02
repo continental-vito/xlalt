@@ -118,23 +118,26 @@ else
 fi
 /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBKEY" "$APP/Contents/Info.plist" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $SPARKLE_PUBKEY" "$APP/Contents/Info.plist"
-if [ -n "${XL_NO_LAUNCHER:-}" ]; then
-  # No launcher at all.
-  #
-  # A bisect against an unmodified runtime showed the status item is laid
-  # out fine with our bundle id, with LSUIElement removed and with an
-  # ad-hoc signature — and stops being laid out the moment the launcher is
-  # introduced. Not because of anything the launcher does (compiling out
-  # its preference purge changed nothing) but, as best we can tell,
-  # because the running executable is then not the one the bundle
-  # declares.
-  #
-  # The launcher existed to set MJConfigFile before the engine started.
-  # setup.lua receives configdir as an argument and every other path it
-  # gets is inside the bundle, so the config directory can be derived from
-  # frameworkspath instead. No preference, no launcher, no exec.
-  echo "→ No launcher: config resolved inside the engine"
-  python3 - "$APP" <<'PATCH'
+# No launcher.
+#
+# A bisect against an unmodified runtime settled this: our bundle id,
+# LSUIElement removed and an ad-hoc signature are all fine, and the status
+# item stops being laid out the moment a launcher is introduced. Not
+# because of anything it does -- compiling out its preference purge
+# changed nothing -- but because the running executable is then not the
+# one the bundle declares, and macOS 26 will not register a menu bar item
+# for it. The app never even appeared under Control Center > Allow in the
+# Menu Bar.
+#
+# The launcher existed only to set MJConfigFile before the engine started.
+# setup.lua is handed configdir as an argument and every other path it
+# receives is inside the bundle, so configdir is derived from
+# frameworkspath instead. No preference to set, so nothing has to run
+# first, and the engine stays the main executable under its own name.
+#
+# build/launcher.c is gone. Recover it from history if it is ever needed.
+echo "→ Resolving the config inside the engine"
+python3 - "$APP" <<'PATCH'
 import sys
 p = sys.argv[1] + "/Contents/Resources/setup.lua"
 s = open(p).read()
@@ -146,8 +149,6 @@ if "ExcelAlt: config lives in this bundle" not in s:
 -- preference, which needed a separate launcher process to set before
 -- startup. Every other path handed to this file is already inside the
 -- bundle, so the config directory is derived from one of them instead.
--- That removes the launcher, and with it the mismatch between the
--- running executable and the one the bundle declares.
 configdir   = frameworkspath:gsub("/Frameworks$", "/Resources")
 fullpath    = configdir .. "/init.lua"
 prettypath  = fullpath
@@ -158,40 +159,12 @@ hasinitfile = true
 else:
     print("   setup.lua already patched")
 PATCH
-  grep -q "ExcelAlt: config lives in this bundle" "$APP/Contents/Resources/setup.lua" \
-    || { echo "✗ setup.lua patch did not apply" >&2 ; exit 1 ; }
+grep -q "ExcelAlt: config lives in this bundle" "$APP/Contents/Resources/setup.lua" \
+  || { echo "✗ setup.lua patch did not apply; the app would load no config" >&2 ; exit 1 ; }
 
-  # The engine keeps its original name and stays the main executable, so
-  # nothing execs and nothing is renamed. Variant 3 of the bisect, which
-  # works, is exactly this.
-  ENGINE="$APP/Contents/MacOS/Hammerspoon"
-  /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable Hammerspoon" "$APP/Contents/Info.plist"
-else
-  mv "$APP/Contents/MacOS/Hammerspoon" "$APP/Contents/MacOS/ExcelAltCore"
-  # Native launcher (see build/launcher.c): configures the app's own prefs,
-  # then execs the engine. Compiled here so the bundle's main executable is
-  # a proper Mach-O, which Gatekeeper accepts unconditionally.
-  #
-  # Universal, explicitly. This is the bundle's MAIN executable, so its
-  # architectures decide whether the app can launch at all. A bare
-  # `clang -O2` builds for the host only, and CI runs on Apple Silicon —
-  # which shipped an arm64-only launcher inside a bundle that was
-  # otherwise perfectly capable of running on Intel.
-  clang -O2 -arch arm64 -arch x86_64 \
-    -o "$APP/Contents/MacOS/ExcelAlt" build/launcher.c -framework CoreFoundation
+ENGINE="$APP/Contents/MacOS/Hammerspoon"
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable Hammerspoon" "$APP/Contents/Info.plist"
 
-  LAUNCHER_ARCHS="$(lipo -archs "$APP/Contents/MacOS/ExcelAlt")"
-  echo "   launcher: $LAUNCHER_ARCHS"
-  case "$LAUNCHER_ARCHS" in *arm64*) ;; *) echo "✗ launcher missing arm64" >&2 ; exit 1 ;; esac
-  case "$LAUNCHER_ARCHS" in
-    *x86_64*) ;;
-    *) echo "✗ launcher is missing x86_64 — Intel Macs cannot run this" >&2 ; exit 1 ;;
-  esac
-  ENGINE="$APP/Contents/MacOS/ExcelAltCore"
-fi
-
-# Whatever the layout, the engine must cover every architecture the
-# bundle's main executable claims.
 CORE_ARCHS="$(lipo -archs "$ENGINE")"
 echo "   engine:   $CORE_ARCHS"
 for A in arm64 x86_64; do

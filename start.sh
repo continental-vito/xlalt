@@ -30,7 +30,7 @@ else
 fi
 
 # 2) Stop any running copy so we can replace it cleanly
-pkill -f "$DEST/Contents/MacOS/ExcelAlt" 2>/dev/null || true
+pkill -f "$DEST/Contents/MacOS/Hammerspoon" 2>/dev/null || true
 sleep 0.4
 
 # 3) Install to /Applications (persists; launches at login via the app itself)

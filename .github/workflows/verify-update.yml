@@ -49,8 +49,8 @@ jobs:
         run: |
           set -eu
           for A in "$RUNNER_TEMP/old.app" "$RUNNER_TEMP/new.app"; do
-            test -x "$A/Contents/MacOS/ExcelAlt"
-            test -x "$A/Contents/MacOS/ExcelAltCore"
+            test -x "$A/Contents/MacOS/Hammerspoon"
+            grep -q "config lives in this bundle" "$A/Contents/Resources/setup.lua"
             test -f "$A/Contents/Resources/init.lua"
             test -d "$A/Contents/Frameworks/Sparkle.framework"
             SIZE=$(du -sm "$A" | cut -f1)
