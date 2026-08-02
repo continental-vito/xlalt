@@ -62,9 +62,27 @@ system has to lay out. A second call in the same launch is a no-op. Regression
 tests cover the count, the deletion and the guard; against the old code the
 guard test creates six items.
 
-Next step, if it is picked up again: instrument LaunchServices registration
-rather than the status item. And a Developer ID signature may change how the
-app is registered, so it is worth re-checking after signing rather than before.
+### What boringNotch does differently
+
+boringNotch has no Apple Developer account, is ad-hoc signed, and calls exactly
+the same API — `NSStatusBar.system.statusItem(withLength:)`. It appears in
+Allow in the Menu Bar. We do not. So neither signing nor the API is the
+difference. One thing is:
+
+| | boringNotch | here |
+|---|---|---|
+| `LSUIElement` | `YES` | deleted by `build-app.sh`, to get a Dock icon |
+
+The runtime ships `LSUIElement`; we remove it. `XL_AGENT=1` puts it back, as a
+test. If the status item registers in agent mode, the Dock icon and the menu
+bar item are a trade rather than a bug — and the manager window would become
+the only way in, so it would need a reachable entry point first.
+
+Their `Info.plist` also answered the Sparkle failure: they set
+`SUEnableDownloaderService` and `SUEnableInstallerLauncherService`, which
+switch on the XPC services Sparkle's installer connects back through. Ours had
+neither, and the log said `agent connection was never initiated`. Both are now
+set unconditionally.
 
 ## Naming
 

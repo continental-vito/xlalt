@@ -55,7 +55,39 @@ cat > "$APP/Contents/Resources/en.lproj/InfoPlist.strings" <<STRINGS
 CFBundleName = "$XL_DISPLAY_NAME";
 CFBundleDisplayName = "$XL_DISPLAY_NAME";
 STRINGS
-/usr/libexec/PlistBuddy -c "Delete :LSUIElement" "$APP/Contents/Info.plist" 2>/dev/null || true
+if [ -n "${XL_AGENT:-}" ]; then
+  # EXPERIMENT (see docs/ARCHITECTURE.md, menu bar).
+  #
+  # The runtime ships LSUIElement, which we normally delete to get a Dock
+  # icon. boringNotch — no Developer account, ad-hoc signed, same
+  # NSStatusBar API — keeps LSUIElement=YES and does appear under Control
+  # Center > Allow in the Menu Bar, where we do not appear at all.
+  #
+  # That is the clearest remaining difference between an app whose status
+  # item works on this machine and ours. Agent mode removes the Dock icon,
+  # so this is a diagnostic, not a default.
+  /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$APP/Contents/Info.plist" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c "Set :LSUIElement true" "$APP/Contents/Info.plist"
+  echo "→ Experiment: agent mode (LSUIElement), no Dock icon"
+else
+  /usr/libexec/PlistBuddy -c "Delete :LSUIElement" "$APP/Contents/Info.plist" 2>/dev/null || true
+fi
+
+# Sparkle's XPC services. Its installer runs through a helper that connects
+# back over XPC, and without these keys it is never launched — which is
+# exactly what "agent connection was never initiated" meant in the log.
+# The services ship inside Sparkle.framework already; these switch them on.
+for k in SUEnableDownloaderService SUEnableInstallerLauncherService; do
+  /usr/libexec/PlistBuddy -c "Add :$k bool true" "$APP/Contents/Info.plist" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c "Set :$k true" "$APP/Contents/Info.plist"
+done
+
+# The runtime's own wording leaks into the Apple Events permission prompt,
+# where the user would read the engine's name and not ours.
+/usr/libexec/PlistBuddy -c "Set :NSAppleEventsUsageDescription $XL_DISPLAY_NAME sends events to Excel, PowerPoint and Word to run your shortcuts." \
+  "$APP/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Set :LSApplicationCategoryType public.app-category.productivity" \
+  "$APP/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $XL_VERSION" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $XL_BUILD" "$APP/Contents/Info.plist"
 # In-app updates: feed + EdDSA public key.
