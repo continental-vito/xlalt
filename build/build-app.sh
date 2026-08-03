@@ -259,6 +259,24 @@ if ! strings -a "$APP/Contents/Resources/MainMenu.nib" | grep -qx "Quit $XL_DISP
   exit 1
 fi
 
+# The runtime's Preferences window is its own UI, not ours. "Show menu
+# icon" puts the engine's hammer in the menu bar beside our own item, and
+# everything else in it is either duplicated by our menu or irrelevant.
+# Unlink it from the app menu so it cannot be opened.
+#
+# NOTE the ellipsis: the app menu uses U+2026 while the engine's own status
+# menu uses three dots. They are different objects in different menus, and
+# removing the three-dot one changes nothing a user can see.
+python3 build/rename-nib.py "$APP/Contents/Resources/MainMenu.nib" \
+  --remove-item "Preferences…" \
+  || { echo "✗ could not remove the Preferences menu item" >&2 ; exit 1 ; }
+# The surrounding items must survive: removing an entry shifts every value
+# index after it, and getting that wrong silently empties the menu.
+for keep in "Quit $XL_DISPLAY_NAME" "About $XL_DISPLAY_NAME" "Check for Updates..."; do
+  strings -a "$APP/Contents/Resources/MainMenu.nib" | grep -qx "$keep" \
+    || { echo "✗ the app menu lost \"$keep\"" >&2 ; exit 1 ; }
+done
+
 echo "→ Embedding engine config and assets"
 cp src/init.lua "$APP/Contents/Resources/init.lua"
 if [ -f assets/AppIcon.icns ]; then

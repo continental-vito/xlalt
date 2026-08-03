@@ -334,6 +334,15 @@ hs.plist = { read = function(path)
   return { CFBundleShortVersionString = "9.9" }
 end }
 -- Tests set M.httpResponse = { status, body } to script the next fetch.
+-- The login item, which the engine's own Preferences window used to own.
+M.loginItem = false
+hs.autoLaunch = function(state)
+  if state ~= nil then M.loginItem = state end
+  return M.loginItem
+end
+hs.menuIcon = function(_) return false end
+hs.closeConsole = function() end
+
 hs.automaticallyCheckForUpdates = function(on)
   M.log.autoUpdateChecks = on
 end

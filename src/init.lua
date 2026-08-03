@@ -2058,6 +2058,13 @@ local function startAutoUpdates()
   dlog("automatic update checks scheduled")
 end
 
+-- Reading this can fail on an engine without the call; treat that as off
+-- rather than letting it take the whole menu down.
+local function loginItemOn()
+  local ok, v = pcall(function() return hs.autoLaunch() end)
+  return ok and v == true
+end
+
 local function menubarMenu()
   local accessOK = hs.accessibilityState()
   local hostItems, overlayItems = {}, {}
@@ -2091,6 +2098,15 @@ local function menubarMenu()
     { title = "-" },
     { title = "Shortcut Manager…", fn = openManager },
     { title = "Check for Updates…", fn = function() checkForUpdatesRef() end },
+    -- The runtime's own Preferences window is removed from the app menu,
+    -- and this was the one setting in it worth keeping. Everything else
+    -- there was either the engine's UI or a duplicate of this menu.
+    { title = (loginItemOn() and "✓ " or "    ") .. "Open at login",
+      fn = function()
+        local want = not loginItemOn()
+        pcall(function() hs.autoLaunch(want) end)
+        dlog("open at login: " .. tostring(want))
+      end },
     { title = "-" },
     { title = accessOK and "Accessibility: granted"
                         or "Grant Accessibility permission…",
@@ -2421,7 +2437,10 @@ pcall(openManager)
 -- pcall each: an engine that lacks one of these should still start.
 pcall(function() hs.menuIcon(false) end)
 pcall(function() hs.closeConsole() end)
-pcall(function() hs.autoLaunch(false) end)
+-- The login item is deliberately NOT forced off here. Doing that ran on
+-- every launch, so "open at login" could be switched on and was silently
+-- switched off again next time. It is a user preference, and it is
+-- offered in the menu bar menu instead.
 
 -- The launch-time agent->regular-app transform destroys status items
 -- created before it completes, so this waits. One creation, one ladder.
@@ -2531,6 +2550,7 @@ ExcelAlt._test = {
   isNewer        = isNewer,
   appcastInfo    = appcastInfo,
   setupMenubar   = setupMenubar,
+  menubarMenu    = menubarMenu,
   purgeStaleStatusItemPrefs = purgeStaleStatusItemPrefs,
   MENUBAR_AUTOSAVE = MENUBAR_AUTOSAVE,
   checkForUpdates = checkForUpdates,

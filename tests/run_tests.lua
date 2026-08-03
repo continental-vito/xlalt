@@ -872,6 +872,36 @@ ExcelAlt.barSetupRan = nil
 T.setupMenubar() ; mock.flushTimers(2)
 local secondName = mock.log.menubars[#mock.log.menubars]
   and mock.log.menubars[#mock.log.menubars].autosaveName
+-- The runtime's Preferences window is unlinked from the app menu, so the
+-- one setting in it worth keeping has to live in ours.
+do
+  local function findItem(label)
+    if not T.menubarMenu then return nil end   -- fail, do not crash
+    for _, item in ipairs(T.menubarMenu()) do
+      if item.title and item.title:find(label, 1, true) then return item end
+    end
+  end
+  mock.loginItem = false
+  local item = findItem("Open at login")
+  check("the menu offers an open-at-login toggle", item ~= nil)
+  check("and shows it off when it is off",
+    item ~= nil and item.title:sub(1, 1) ~= "\u{2713}", item and item.title)
+  if item then item.fn() end
+  check("choosing it turns the login item on", mock.loginItem == true)
+  local on = findItem("Open at login")
+  check("and the menu then shows it on",
+    on ~= nil and on.title:find("\u{2713}") ~= nil, on and on.title)
+  if on then on.fn() end
+  check("choosing it again turns it off", mock.loginItem == false)
+
+  -- Startup used to call hs.autoLaunch(false) unconditionally, so the
+  -- setting could be switched on and was silently switched off again on
+  -- the next launch.
+  local src = io.open("src/init.lua"):read("*a")
+  check("startup does not force the login item off",
+    src:find("hs%.autoLaunch%(false%)") == nil)
+end
+
 check("the status item asks for a stable identity across launches",
   firstName ~= nil and firstName == secondName, tostring(firstName) .. " vs " .. tostring(secondName))
 -- Comparing firstName to T.MENUBAR_AUTOSAVE would be tautological, and
