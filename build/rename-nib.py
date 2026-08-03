@@ -179,7 +179,150 @@ def rename(data, old, new):
     return build(a), changed, skipped
 
 
+def _cls(a, i):
+    ci = a["objects"][i][0]
+    return a["classes"][ci][1].rstrip(b"\x00").decode() if ci < len(a["classes"]) else "?"
+
+
+def _obj_values(a, i):
+    _, vi, vc = a["objects"][i]
+    return [(vi + n, v) for n, v in enumerate(a["values"][vi:vi + vc])]
+
+
+def _string_of(a, idx):
+    if idx >= len(a["objects"]) or _cls(a, idx) != "NSString":
+        return None
+    for _, v in _obj_values(a, idx):
+        if v[1] == 8:
+            return v[2].rstrip(b"\x00").decode("utf-8", "replace")
+    return None
+
+
+def _item_title(a, i):
+    for _, v in _obj_values(a, i):
+        if v[1] == 10:
+            t = _string_of(a, int.from_bytes(v[2], "little"))
+            if t:
+                return t
+    return None                       # separators carry no title
+
+
+def _drop_value(a, pos):
+    """Remove one value, fixing every object index that points past it.
+
+    Objects address values as (start, count) into one flat list, so a
+    deletion shifts everything after it.
+    """
+    del a["values"][pos]
+    for j, (c, vi, vc) in enumerate(a["objects"]):
+        if vi <= pos < vi + vc:
+            a["objects"][j] = (c, vi, vc - 1)
+        elif vi > pos:
+            a["objects"][j] = (c, vi - 1, vc)
+
+
+def _in_a_menu(a, target):
+    """Is this object still an entry in something that looks like a menu?
+
+    The archive also keeps large index arrays that mention every item;
+    being in one of those is not what puts an item on screen.
+    """
+    for i in range(len(a["objects"])):
+        if _cls(a, i) not in ("NSMutableArray", "NSArray"):
+            continue
+        members = [int.from_bytes(v[2], "little")
+                   for _, v in _obj_values(a, i) if v[1] == 10]
+        if target not in members:
+            continue
+        kinds = [_cls(a, m) for m in members if m < len(a["objects"])]
+        if kinds.count("NSMenuItem") >= max(1, len(kinds) - 1):
+            return True
+    return False
+
+
+def remove_menu_item(data, title):
+    """Unlink the menu item with this title from the menu holding it.
+
+    Beware: the runtime has TWO items reading "Preferences". The app menu
+    uses a real ellipsis (U+2026); its own status-item menu uses three
+    dots. They are different objects in different menus and both open the
+    same window, so removing one leaves it reachable through the other.
+
+    The item object stays in the archive; only the menu's reference to it
+    is dropped. Orphans are harmless and keep the edit minimal.
+    """
+    a = parse(data)
+    target = None
+    for i in range(len(a["objects"])):
+        if _cls(a, i) == "NSMenuItem" and _item_title(a, i) == title:
+            target = i
+            break
+    if target is None:
+        return None, "no menu item titled %r" % title
+
+    for i in range(len(a["objects"])):
+        if _cls(a, i) not in ("NSMutableArray", "NSArray"):
+            continue
+        entries = [(pos, int.from_bytes(v[2], "little"))
+                   for pos, v in _obj_values(a, i) if v[1] == 10]
+        members = [m for _, m in entries]
+        if target not in members:
+            continue
+        kinds = [_cls(a, m) for m in members if m < len(a["objects"])]
+        if kinds.count("NSMenuItem") < max(1, len(kinds) - 1):
+            continue
+
+        at = members.index(target)
+        drop = [entries[at][0]]
+
+        def sep(n):
+            return (0 <= n < len(members)
+                    and _cls(a, members[n]) == "NSMenuItem"
+                    and _item_title(a, members[n]) is None)
+        # Removing an item between two separators leaves them adjacent,
+        # which draws as a double rule.
+        if sep(at - 1) and sep(at + 1):
+            drop.append(entries[at + 1][0])
+
+        for pos in sorted(drop, reverse=True):
+            _drop_value(a, pos)
+        out = build(a)
+        b = parse(out)                 # must still read back
+        if _in_a_menu(b, target):
+            return None, "%r is still held by a menu" % title
+        return out, None
+    return None, "found %r but no menu holds it" % title
+
+
 def main(argv):
+    if len(argv) == 4 and argv[2] == "--remove-item":
+        path, title = argv[1], argv[3]
+        data = open(path, "rb").read()
+        if build(parse(data)) != data:
+            print("✗ %s does not round-trip; refusing to edit" % path, file=sys.stderr)
+            return 1
+        out, err = remove_menu_item(data, title)
+        if err:
+            print("✗ %s" % err, file=sys.stderr)
+            return 1
+        open(path, "wb").write(out)
+        print("   removed menu item %r" % title)
+        return 0
+
+    # Anything else must be exactly FILE OLD NEW. Without this, a call like
+    #   rename-nib.py MainMenu.nib --remove-item "Preferences…"
+    # against a build of this tool that predates --remove-item reads as a
+    # rename of the literal string "--remove-item", matches nothing, and
+    # exits 0. The build then reports success having done nothing at all,
+    # which is exactly what happened.
+    if len(argv) != 4 or argv[2].startswith("--"):
+        print("usage: rename-nib.py FILE OLD NEW\n"
+              "       rename-nib.py FILE --remove-item TITLE", file=sys.stderr)
+        return 2
+    return _rename_main(argv)
+
+
+def _rename_main(argv):
     if len(argv) != 4:
         print("usage: rename-nib.py FILE OLD NEW", file=sys.stderr)
         return 2

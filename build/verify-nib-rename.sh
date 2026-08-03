@@ -83,6 +83,44 @@ expect_present "showAboutPanel:"
 expect_present "showPreferencesWindow:"
 
 echo
+echo "→ An unsupported invocation must fail, not quietly do nothing"
+if python3 build/rename-nib.py "$NIBS/MainMenu.nib" --remove-item 2>/dev/null; then
+  echo "  ✗ a malformed call succeeded" >&2 ; fail=1
+else
+  echo "  ✓ malformed calls are rejected"
+fi
+
+echo
+echo "→ Removing BOTH Preferences items"
+# One lives in the app menu (real ellipsis), one in the engine's own
+# status menu (three dots). Both open the same window, so leaving either
+# leaves the settings reachable.
+for item in "Preferences…" "Preferences..."; do
+  python3 build/rename-nib.py "$NIBS/MainMenu.nib" --remove-item "$item"
+done
+gone_from_menus() {
+  python3 - "$NIBS/MainMenu.nib" "$1" <<'PY'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("rn", "build/rename-nib.py")
+rn = importlib.util.module_from_spec(spec); spec.loader.exec_module(rn)
+a = rn.parse(open(sys.argv[1], "rb").read())
+for i in range(len(a["objects"])):
+    if rn._cls(a, i) == "NSMenuItem" and rn._item_title(a, i) == sys.argv[2]:
+        sys.exit(1 if rn._in_a_menu(a, i) else 0)
+sys.exit(0)
+PY
+}
+for item in "Preferences…" "Preferences..."; do
+  if gone_from_menus "$item"; then echo "  ✓ no menu holds: $item"
+  else echo "  ✗ STILL IN A MENU: $item" >&2 ; fail=1 ; fi
+done
+# Removing entries shifts every value index after them; a botched edit
+# empties the menu without complaining.
+expect_present "Quit CobAlt"
+expect_present "About CobAlt"
+expect_present "Check for Updates..."
+
+echo
 echo "→ Edited nibs must still parse and round-trip"
 python3 - "$NIBS" <<'PY'
 import glob, importlib.util, os, sys
