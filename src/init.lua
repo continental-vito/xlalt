@@ -2436,6 +2436,24 @@ pcall(openManager)
 --
 -- pcall each: an engine that lacks one of these should still start.
 pcall(function() hs.menuIcon(false) end)
+
+-- ...and keep it off.
+--
+-- The engine's own status item can be switched back on behind our back:
+-- from its Preferences window, or from a preference left over by an
+-- older build that is read after we start. Two identical corgi icons
+-- with different menus is worse than one foreign-looking hammer, and its
+-- menu is the engine's, not ours.
+--
+-- A boolean read every few seconds. No window-server work, and it only
+-- acts when something has actually changed.
+ExcelAlt.engineIcon = hs.timer.doEvery(5, function()
+  local ok, on = pcall(function() return hs.menuIcon() end)
+  if ok and on == true then
+    pcall(function() hs.menuIcon(false) end)
+    dlog("engine status icon had been switched on; turned it back off")
+  end
+end)
 pcall(function() hs.closeConsole() end)
 -- The login item is deliberately NOT forced off here. Doing that ran on
 -- every launch, so "open at login" could be switched on and was silently
