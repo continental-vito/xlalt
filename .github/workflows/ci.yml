@@ -31,6 +31,17 @@ jobs:
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.4
       - run: bash tests/swap_test.sh
 
+  # The build rewrites setup.lua so the engine finds its config inside the
+  # bundle. The first version of that patch was inert and nothing noticed
+  # for two releases, so this runs the patched file and checks what it
+  # actually forwards to the runtime.
+  config-resolution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.4
+      - run: bash tests/setup_patch_test.sh
+
   nib-rename:
     runs-on: ubuntu-latest
     steps:

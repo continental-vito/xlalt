@@ -145,26 +145,63 @@ python3 - "$APP" <<'PATCH'
 import sys
 p = sys.argv[1] + "/Contents/Resources/setup.lua"
 s = open(p).read()
-first, rest = s.split("\n", 1)
-if "ExcelAlt: config lives in this bundle" not in s:
-    s = first + """
--- ExcelAlt: config lives in this bundle.
--- The runtime normally locates init.lua through the MJConfigFile
--- preference, which needed a separate launcher process to set before
--- startup. Every other path handed to this file is already inside the
--- bundle, so the config directory is derived from one of them instead.
-configdir   = frameworkspath:gsub("/Frameworks$", "/Resources")
-fullpath    = configdir .. "/init.lua"
-prettypath  = fullpath
-hasinitfile = true
-""" + "\n" + rest
+
+# setup.lua receives its arguments as varargs, destructures them into
+# locals on line 1, and then ends with
+#
+#     return require'hs._coresetup'.setup(...)
+#
+# passing the ORIGINAL varargs onward. Assigning to the locals therefore
+# changes nothing. The first version of this patch did exactly that and
+# was a no-op for two releases; the app kept working only because a
+# preference left behind by the old launcher still pointed at the config.
+# Rename the bundle and that path stops existing, and no config loads.
+#
+# So the tail call has to be rewritten to pass the locals.
+CALL_IN  = "return require'hs._coresetup'.setup(...)"
+CALL_OUT = ("return require'hs._coresetup'.setup(modpath, frameworkspath, "
+            "prettypath, fullpath, configdir, docstringspath, hasinitfile, "
+            "autoload_extensions)")
+
+BLOCK = """
+-- CobAlt: the config lives in this bundle.
+-- Located from this file's own path rather than from any argument or
+-- preference, so it survives the bundle being renamed or moved. Falls
+-- back to whatever the runtime passed if our init.lua is not there.
+local _xl_dir = debug.getinfo(1, "S").source:match("^@(.*)/[^/]*$")
+if _xl_dir then
+  local _f = io.open(_xl_dir .. "/init.lua", "r")
+  if _f then
+    _f:close()
+    configdir   = _xl_dir
+    fullpath    = _xl_dir .. "/init.lua"
+    prettypath  = fullpath
+    hasinitfile = true
+  end
+end
+"""
+
+if "CobAlt: the config lives in this bundle" in s:
+    print("   setup.lua already patched")
+else:
+    if CALL_IN not in s:
+        sys.exit("setup.lua does not end the way this patch expects")
+    first, rest = s.split("\n", 1)
+    s = first + BLOCK + "\n" + rest
+    s = s.replace(CALL_IN, CALL_OUT)
     open(p, "w").write(s)
     print("   setup.lua patched")
-else:
-    print("   setup.lua already patched")
 PATCH
-grep -q "ExcelAlt: config lives in this bundle" "$APP/Contents/Resources/setup.lua" \
-  || { echo "✗ setup.lua patch did not apply; the app would load no config" >&2 ; exit 1 ; }
+
+SETUP="$APP/Contents/Resources/setup.lua"
+# Assert BOTH halves. The block alone is what shipped in v3.14 and did
+# nothing, because the tail call still forwarded the untouched varargs.
+grep -q "CobAlt: the config lives in this bundle" "$SETUP" \
+  || { echo "✗ setup.lua patch did not apply" >&2 ; exit 1 ; }
+grep -q "setup(modpath, frameworkspath" "$SETUP" \
+  || { echo "✗ setup.lua still forwards the original varargs; the patch is inert" >&2 ; exit 1 ; }
+grep -q "setup(\.\.\.)" "$SETUP" \
+  && { echo "✗ setup.lua still contains the vararg tail call" >&2 ; exit 1 ; }
 
 ENGINE="$APP/Contents/MacOS/Hammerspoon"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable Hammerspoon" "$APP/Contents/Info.plist"
