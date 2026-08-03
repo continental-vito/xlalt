@@ -1885,14 +1885,38 @@ local function installDownloaded(info, archive)
   end
   runStep("/usr/bin/ditto", { "-x", "-k", archive, UPDATE_DIR .. "/new" }, function(ok, _, err)
     if not ok then return updateFailed("unpacking the download", err) end
-    local newApp = UPDATE_DIR .. "/new/ExcelAlt.app"
-    -- Never swap in something we have not identified.
+    -- Find the bundle rather than assuming what it is called. This was
+    -- "/new/ExcelAlt.app", so the release that renamed the app to
+    -- CobAlt.app pointed the installer at a path that did not exist —
+    -- and the check below skipped itself when the plist could not be
+    -- read, so the update silently did nothing at all.
+    local newDir, newApp = UPDATE_DIR .. "/new", nil
+    for entry in hs.fs.dir(newDir) do
+      if entry:sub(-4) == ".app" then
+        if newApp then
+          return updateFailed("checking the download",
+            "the archive holds more than one application")
+        end
+        newApp = newDir .. "/" .. entry
+      end
+    end
+    if not newApp then
+      return updateFailed("checking the download", "no application in the archive")
+    end
+
+    -- Never swap in something we have not identified. An unreadable
+    -- Info.plist is a failure, not a reason to skip the check.
     local plist = hs.plist and hs.plist.read(newApp .. "/Contents/Info.plist")
     local got = plist and plist.CFBundleShortVersionString
-    if plist and got ~= info.version then
+    if not plist then
+      return updateFailed("checking the download",
+        "could not read Info.plist in " .. newApp)
+    end
+    if got ~= info.version then
       return updateFailed("checking the download",
         "archive reports version " .. tostring(got) .. ", expected " .. info.version)
     end
+    dlog("update: archive holds " .. newApp:match("([^/]+)$") .. " " .. tostring(got))
     local script = writeSwapScript(newApp)
     if not script then return updateFailed("preparing the install", "could not write the swap script") end
     dlog("update: installing " .. info.version .. " over " .. tostring(hs.processInfo.bundlePath))

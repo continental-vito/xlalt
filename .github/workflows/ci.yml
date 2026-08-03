@@ -30,6 +30,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.4
       - run: bash tests/swap_test.sh
+      - run: bash tests/readme_test.sh
 
   # The build rewrites setup.lua so the engine finds its config inside the
   # bundle. The first version of that patch was inert and nothing noticed

@@ -160,6 +160,18 @@ hs.fs = {
     f:close()
     return { mode = "file", size = size }
   end,
+  -- Real listing, like mkdir above: the updater has to find the bundle
+  -- inside the archive by looking, since its name changes between
+  -- releases.
+  dir = function(path)
+    local names, pipe = {}, io.popen("ls -1 '" .. path .. "' 2>/dev/null")
+    if pipe then
+      for line in pipe:lines() do names[#names + 1] = line end
+      pipe:close()
+    end
+    local i = 0
+    return function() i = i + 1 ; return names[i] end
+  end,
 }
 
 hs.alert = { show = function(msg, _)
@@ -312,7 +324,13 @@ hs.processInfo = { resourcePath = "/tmp/xl-test-resources",
 hs.plist = { read = function(path)
   -- Tests can stub a specific path (an update being unpacked, say);
   -- everything else is the running bundle.
-  if M.plistFor and M.plistFor[path] then return M.plistFor[path] end
+  -- An explicit false means "this plist cannot be read", which is not the
+  -- same as "no stub for this path".
+  if M.plistFor and M.plistFor[path] ~= nil then
+    local v = M.plistFor[path]
+    if v == false then return nil end
+    return v
+  end
   return { CFBundleShortVersionString = "9.9" }
 end }
 -- Tests set M.httpResponse = { status, body } to script the next fetch.

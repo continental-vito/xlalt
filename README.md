@@ -9,7 +9,7 @@
 Tap the **⌥ Option** key, then type the sequence you already know from Windows.
 `H O I` autofits in Excel · `H I` adds a slide in PowerPoint · `H S 2` applies Heading 2 in Word
 
-### [⬇ Download for macOS](https://github.com/continental-vito/xlalt/releases/latest/download/XL.dmg)
+### [⬇ Download for macOS](https://github.com/continental-vito/xlalt/releases/latest/download/CobAlt.dmg)
 
 <sub>Apple Silicon &amp; Intel · macOS 13+ · free &amp; open source</sub>
 
@@ -28,7 +28,7 @@ Office's ribbon shortcuts are muscle memory for anyone who learned these apps on
 
 ## Install
 
-1. **[Download XL.dmg](https://github.com/continental-vito/xlalt/releases/latest/download/XL.dmg)**, open it, drag **ExcelAlt** into Applications.
+1. **[Download CobAlt.dmg](https://github.com/continental-vito/xlalt/releases/latest/download/CobAlt.dmg)**, open it, drag **CobAlt** into Applications.
 2. Open it. First launch only: macOS blocks apps that aren't notarized — go to **System Settings → Privacy &amp; Security** and click **Open Anyway**.
 3. Grant **Accessibility** when the app asks. Shortcuts activate immediately.
 4. Open Excel, tap **⌥**, start typing sequences.

@@ -656,7 +656,10 @@ end
 
 ExcelAlt.version = "3.3"
 mock.httpResponse = { 200, FEED }
-mock.plistFor = { ["/tmp/xlalt-update/new/ExcelAlt.app/Contents/Info.plist"] =
+-- Deliberately NOT named after the installed app: releases rename the
+-- bundle, and the installer has to cope with that.
+os.execute("rm -rf /tmp/xlalt-update/new && mkdir -p /tmp/xlalt-update/new/CobAlt.app/Contents")
+mock.plistFor = { ["/tmp/xlalt-update/new/CobAlt.app/Contents/Info.plist"] =
   { CFBundleShortVersionString = "3.9" } }
 
 -- Declining leaves everything alone.
@@ -674,7 +677,7 @@ ExcelAlt.updating = false
 mock.taskResult = { ["/usr/bin/curl"] = { code = 0, before = function()
   local f = io.open("/tmp/xlalt-update/update.zip", "w") ; f:write(string.rep("x", 1234)) ; f:close()
 end } }
-os.execute("mkdir -p /tmp/xlalt-update")
+os.execute("mkdir -p /tmp/xlalt-update/new/CobAlt.app/Contents")
 T.checkForUpdates(true) ; mock.flushTimers(0.1)
 do
   local bins = {}
@@ -685,6 +688,47 @@ do
     table.concat(mock.log.tasks[1].args, " "):find("ExcelAlt%-update%.zip") ~= nil)
   check("the archive is unpacked with ditto", bins[2] == "/usr/bin/ditto")
 end
+-- The installer used to hardcode the bundle name, so the release that
+-- renamed the app pointed it at a path that did not exist. Worse, the
+-- version guard read "if plist and got ~= expected", and an unreadable
+-- plist made it skip itself — so the update reported success and did
+-- nothing at all.
+do
+  local function attemptInstall()
+    ExcelAlt.updating = false
+    mock.log.tasks = {} ; mock.log.executed = {}
+    T.checkForUpdates(true) ; mock.flushTimers(0.1)
+    local handed = false
+    for _, c in ipairs(mock.log.executed or {}) do
+      if c:find("swap.sh") then handed = true end
+    end
+    return handed
+  end
+
+  os.execute("rm -rf /tmp/xlalt-update/new && mkdir -p /tmp/xlalt-update/new")
+  check("an archive with no application in it is refused",
+    attemptInstall() == false)
+
+  os.execute("mkdir -p /tmp/xlalt-update/new/One.app/Contents /tmp/xlalt-update/new/Two.app/Contents")
+  check("an archive with two applications is refused",
+    attemptInstall() == false)
+
+  -- A bundle whose Info.plist cannot be read must stop the install, not
+  -- wave it through.
+  os.execute("rm -rf /tmp/xlalt-update/new && mkdir -p /tmp/xlalt-update/new/Mystery.app/Contents")
+  mock.plistFor = { ["/tmp/xlalt-update/new/Mystery.app/Contents/Info.plist"] = false }
+  check("a bundle whose version cannot be read is refused",
+    attemptInstall() == false)
+
+  -- Restore the good case and confirm it still installs, so the checks
+  -- above are not just failing for some unrelated reason.
+  os.execute("rm -rf /tmp/xlalt-update/new && mkdir -p /tmp/xlalt-update/new/CobAlt.app/Contents")
+  mock.plistFor = { ["/tmp/xlalt-update/new/CobAlt.app/Contents/Info.plist"] =
+    { CFBundleShortVersionString = "3.9" } }
+  check("a correctly named-and-versioned bundle still installs",
+    attemptInstall() == true)
+end
+
 check("the swap is handed to a detached script",
   (table.concat(mock.log.executed, " ")):find("nohup /bin/sh") ~= nil,
   table.concat(mock.log.executed, " "))
