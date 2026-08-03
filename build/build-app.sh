@@ -284,6 +284,25 @@ if [ -f assets/AppIcon.icns ]; then
 fi
 [ -f assets/menubar@2x.png ] && cp assets/menubar@2x.png "$APP/Contents/Resources/xl-menubar@2x.png"
 [ -f assets/menubar.png ]    && cp assets/menubar.png    "$APP/Contents/Resources/xl-menubar.png"
+
+# The engine has a status icon of its own -- the hammer -- loaded by the
+# name "statusicon" from Resources. It is only shown if someone switches
+# it on, and the switch lives in the Preferences window we unlink from the
+# app menu, so it should be unreachable. Replace the artwork anyway: if it
+# ever does appear, it should be our corgi and not another product's logo.
+#
+# NSImage resolves "statusicon" to any supported extension, so the PDF is
+# removed and PNGs put in its place. Same template as our own item, so
+# both render identically.
+rm -f "$APP/Contents/Resources/statusicon.pdf"
+if [ -f assets/menubar@2x.png ] && [ -f assets/menubar.png ]; then
+  cp assets/menubar.png    "$APP/Contents/Resources/statusicon.png"
+  cp assets/menubar@2x.png "$APP/Contents/Resources/statusicon@2x.png"
+fi
+[ -e "$APP/Contents/Resources/statusicon.pdf" ] \
+  && { echo "✗ the engine's status icon is still in the bundle" >&2 ; exit 1 ; }
+[ -f "$APP/Contents/Resources/statusicon.png" ] \
+  || { echo "✗ no replacement status icon was installed" >&2 ; exit 1 ; }
 [ -f assets/xl-corgi.png ]   && cp assets/xl-corgi.png   "$APP/Contents/Resources/xl-corgi.png"
 
 
