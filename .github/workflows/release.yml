@@ -78,26 +78,48 @@ jobs:
           # DMG is what a new user downloads. Both need to be notarized,
           # but only the DMG and the .app can be stapled — a zip cannot
           # hold a stapled ticket, so the app is stapled before zipping.
-          submit dist/XL-App.zip
-          xcrun stapler staple dist/ExcelAlt.app
-          submit dist/XL.dmg
-          xcrun stapler staple dist/XL.dmg
+          submit "${{ steps.art.outputs.appzip }}"
+          xcrun stapler staple dist/*.app
+          submit "${{ steps.art.outputs.dmg }}"
+          xcrun stapler staple "${{ steps.art.outputs.dmg }}"
           rm -f "$RUNNER_TEMP/key.p8"
           # Repackage so the shipped archives contain the stapled app.
           bash build/repackage.sh
           echo "→ Gatekeeper verdict on the DMG:"
-          spctl -a -t open --context context:primary-signature -vv dist/XL.dmg
+          spctl -a -t open --context context:primary-signature -vv "${{ steps.art.outputs.dmg }}"
           echo "→ and on the app:"
-          spctl -a -t exec -vv dist/ExcelAlt.app
+          spctl -a -t exec -vv dist/*.app
+      # The DMG and app-zip names follow XL_DMG_NAME, so hardcoding them
+      # here breaks the release the moment the product is renamed — which
+      # is exactly what happened going from XL.dmg to CobAlt.dmg. Resolve
+      # them from disk instead, and fail loudly if they are missing.
+      - name: Locate the built artifacts
+        id: art
+        run: |
+          set -eu
+          DMG=$(ls dist/*.dmg | head -1)
+          APPZIP=$(ls dist/*-App.zip | head -1)
+          UPDATE=$(ls dist/*-update.zip | head -1)
+          for f in "$DMG" "$APPZIP" "$UPDATE"; do
+            test -s "$f" || { echo "missing or empty: $f" >&2; exit 1; }
+            echo "   $f ($(stat -f%z "$f") bytes)"
+          done
+          {
+            echo "dmg=$DMG"
+            echo "appzip=$APPZIP"
+            echo "update=$UPDATE"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create or update release with DMG
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           gh release create "$TAG" --title "CobAlt $TAG" \
-            --notes "Download XL.dmg below → drag CobAlt to Applications → open (first time: System Settings → Privacy & Security → Open Anyway) → grant Accessibility → tap ⌥ in Excel, PowerPoint or Word." \
+            --notes "Download the DMG below → drag CobAlt to Applications → open (first time: System Settings → Privacy & Security → Open Anyway) → grant Accessibility → tap ⌥ in Excel, PowerPoint or Word." \
             2>/dev/null || true
-          gh release upload "$TAG" dist/XL.dmg dist/XL-App.zip dist/ExcelAlt-update.zip --clobber
+          gh release upload "$TAG" "${{ steps.art.outputs.dmg }}" \
+            "${{ steps.art.outputs.appzip }}" "${{ steps.art.outputs.update }}" --clobber
       - name: Publish appcast for in-app updates
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -114,13 +136,14 @@ jobs:
           KEYFILE=/tmp/sk.pem
           VER="${TAG#v}"
           BUILD="${{ github.run_number }}"
-          SIG=$(openssl pkeyutl -sign -inkey "$KEYFILE" -rawin -in dist/ExcelAlt-update.zip | base64)
-          LEN=$(stat -f%z dist/ExcelAlt-update.zip)
+          SIG=$(openssl pkeyutl -sign -inkey "$KEYFILE" -rawin -in "${{ steps.art.outputs.update }}" | base64)
+          LEN=$(stat -f%z "${{ steps.art.outputs.update }}")
           # Read the floor off the built app rather than hardcoding it. It
           # was pinned at 12.0 here while the runtime required 13.0, so
           # Sparkle offered updates to machines that could not run them.
+          BUILT_APP=$(ls -d dist/*.app | head -1)
           MINOS=$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" \
-                    dist/ExcelAlt.app/Contents/Info.plist)
+                    "$BUILT_APP/Contents/Info.plist")
           test -n "$MINOS"
           cat > appcast.xml <<APPCAST
           <?xml version="1.0" encoding="utf-8"?>
@@ -131,7 +154,7 @@ jobs:
           <sparkle:version>$BUILD</sparkle:version>
           <sparkle:shortVersionString>$VER</sparkle:shortVersionString>
           <sparkle:minimumSystemVersion>$MINOS</sparkle:minimumSystemVersion>
-          <enclosure url="https://github.com/continental-vito/xlalt/releases/download/$TAG/ExcelAlt-update.zip" length="$LEN" type="application/octet-stream" sparkle:edSignature="$SIG"/>
+          <enclosure url="https://github.com/continental-vito/xlalt/releases/download/$TAG/$(basename "${{ steps.art.outputs.update }}")" length="$LEN" type="application/octet-stream" sparkle:edSignature="$SIG"/>
           </item>
           </channel></rss>
           APPCAST

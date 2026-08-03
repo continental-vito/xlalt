@@ -38,7 +38,7 @@ jobs:
       - name: Confirm it is a dev build, not the real one
         run: |
           set -eu
-          APP=dist/ExcelAlt-dev.app
+          APP=$(ls -d dist/*.app | head -1)
           test -d "$APP"
           BID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist")
           echo "bundle id: $BID"
@@ -64,6 +64,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.artifact.outputs.name }}
-          path: dist/XL-dev.dmg
+          path: dist/*.dmg
           retention-days: 14
           if-no-files-found: error

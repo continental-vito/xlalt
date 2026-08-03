@@ -32,7 +32,7 @@ jobs:
           XL_VERSION: "9.0"
         run: |
           bash build/build-app.sh
-          mv dist/ExcelAlt.app "$RUNNER_TEMP/old.app"
+          mv "$(ls -d dist/*.app | head -1)" "$RUNNER_TEMP/old.app"
 
       - name: Build "new" release
         env:
@@ -43,7 +43,7 @@ jobs:
           # consecutive releases do rather than being reproducible copies.
           printf '\n-- verify-update: forces a different code hash\n' >> src/init.lua
           bash build/build-app.sh
-          mv dist/ExcelAlt.app "$RUNNER_TEMP/new.app"
+          mv "$(ls -d dist/*.app | head -1)" "$RUNNER_TEMP/new.app"
 
       - name: check - both bundles are the real product
         run: |
