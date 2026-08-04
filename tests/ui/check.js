@@ -51,12 +51,34 @@ const APPS = [
 w.render(APPS);
 
 // ---------------------------------------------------------------- tabs
-check('five tabs are built: three hosts plus How to use and Feedback',
-  d.querySelectorAll('#tabs button').length === 5,
+check('six tabs are built: three hosts plus How to use, Settings and Feedback',
+  d.querySelectorAll('#tabs button').length === 6,
   d.querySelectorAll('#tabs button').length);
-check('tab labels read Excel / PowerPoint / Word / How to use / Feedback',
+check('tab labels read Excel / PowerPoint / Word / How to use / Settings / Feedback',
   [...d.querySelectorAll('#tabs button')].map(b => b.textContent).join(',') ===
-  'Excel,PowerPoint,Word,How to use,Feedback');
+  'Excel,PowerPoint,Word,How to use,Settings,Feedback');
+
+// ------------------------------------------------------------ settings
+// These replace the engine's own preferences window, which the build
+// removes from the app menu.
+w.renderSettings({ login: false, dock: true, menubar: true });
+check('the settings panel shows the three toggles',
+  ['pf-login', 'pf-dock', 'pf-menubar'].every(id => d.getElementById(id)));
+check('and reflects what the engine reports',
+  d.getElementById('pf-login').checked === false &&
+  d.getElementById('pf-dock').checked === true);
+sent.length = 0;
+d.getElementById('pf-login').checked = true;
+d.getElementById('pf-login').dispatchEvent(new w.Event('change'));
+check('ticking one asks the engine to change it',
+  sent.length === 1 && sent[0].op === 'setpref' &&
+  sent[0].key === 'login' && sent[0].value === true,
+  JSON.stringify(sent[0]));
+// The engine refuses a change that would leave no way back in, so the
+// boxes must follow the engine rather than the click.
+w.renderSettings({ login: true, dock: true, menubar: true });
+check('a refused change leaves the box showing the real state',
+  d.getElementById('pf-menubar').checked === true);
 check('a page exists for every host',
   !!d.getElementById('page-excel') && !!d.getElementById('page-powerpoint') && !!d.getElementById('page-word'));
 check('Excel is the tab shown first',

@@ -240,58 +240,66 @@ def _in_a_menu(a, target):
     return False
 
 
+def _unlink_once(a, title):
+    """Unlink one menu item with this title. Returns True if it did."""
+    for i in range(len(a["objects"])):
+        if _cls(a, i) != "NSMenuItem" or _item_title(a, i) != title:
+            continue
+        for j in range(len(a["objects"])):
+            if _cls(a, j) not in ("NSMutableArray", "NSArray"):
+                continue
+            entries = [(pos, int.from_bytes(v[2], "little"))
+                       for pos, v in _obj_values(a, j) if v[1] == 10]
+            members = [m for _, m in entries]
+            if i not in members:
+                continue
+            kinds = [_cls(a, m) for m in members if m < len(a["objects"])]
+            if kinds.count("NSMenuItem") < max(1, len(kinds) - 1):
+                continue
+            at = members.index(i)
+            drop = [entries[at][0]]
+
+            def sep(n):
+                return (0 <= n < len(members)
+                        and _cls(a, members[n]) == "NSMenuItem"
+                        and _item_title(a, members[n]) is None)
+            # An item removed from between two separators leaves them
+            # adjacent, which draws as a double rule.
+            if sep(at - 1) and sep(at + 1):
+                drop.append(entries[at + 1][0])
+            for pos in sorted(drop, reverse=True):
+                _drop_value(a, pos)
+            return True
+    return False
+
+
 def remove_menu_item(data, title):
-    """Unlink the menu item with this title from the menu holding it.
+    """Unlink EVERY menu item with this title, from every menu.
 
-    Beware: the runtime has TWO items reading "Preferences". The app menu
-    uses a real ellipsis (U+2026); its own status-item menu uses three
-    dots. They are different objects in different menus and both open the
-    same window, so removing one leaves it reachable through the other.
+    The runtime puts the same commands in two places: the app menu and
+    its own status-item menu. "Check for Updates..." appears in both, and
+    so did "Preferences" (with different ellipses). Removing one leaves
+    the command a click away in the other, which is exactly the mistake
+    made twice here.
 
-    The item object stays in the archive; only the menu's reference to it
-    is dropped. Orphans are harmless and keep the edit minimal.
+    Item objects stay in the archive; only the menus' references go.
     """
     a = parse(data)
-    target = None
-    for i in range(len(a["objects"])):
-        if _cls(a, i) == "NSMenuItem" and _item_title(a, i) == title:
-            target = i
-            break
-    if target is None:
-        return None, "no menu item titled %r" % title
+    removed = 0
+    while _unlink_once(a, title):
+        removed += 1
+        if removed > 8:                      # nothing has eight copies
+            return None, "refusing to remove more than 8 copies of %r" % title
+    if removed == 0:
+        return None, "no menu holds an item titled %r" % title
 
-    for i in range(len(a["objects"])):
-        if _cls(a, i) not in ("NSMutableArray", "NSArray"):
-            continue
-        entries = [(pos, int.from_bytes(v[2], "little"))
-                   for pos, v in _obj_values(a, i) if v[1] == 10]
-        members = [m for _, m in entries]
-        if target not in members:
-            continue
-        kinds = [_cls(a, m) for m in members if m < len(a["objects"])]
-        if kinds.count("NSMenuItem") < max(1, len(kinds) - 1):
-            continue
-
-        at = members.index(target)
-        drop = [entries[at][0]]
-
-        def sep(n):
-            return (0 <= n < len(members)
-                    and _cls(a, members[n]) == "NSMenuItem"
-                    and _item_title(a, members[n]) is None)
-        # Removing an item between two separators leaves them adjacent,
-        # which draws as a double rule.
-        if sep(at - 1) and sep(at + 1):
-            drop.append(entries[at + 1][0])
-
-        for pos in sorted(drop, reverse=True):
-            _drop_value(a, pos)
-        out = build(a)
-        b = parse(out)                 # must still read back
-        if _in_a_menu(b, target):
+    out = build(a)
+    b = parse(out)                           # must still read back
+    for i in range(len(b["objects"])):
+        if _cls(b, i) == "NSMenuItem" and _item_title(b, i) == title \
+                and _in_a_menu(b, i):
             return None, "%r is still held by a menu" % title
-        return out, None
-    return None, "found %r but no menu holds it" % title
+    return out, removed
 
 
 def main(argv):
@@ -301,12 +309,12 @@ def main(argv):
         if build(parse(data)) != data:
             print("✗ %s does not round-trip; refusing to edit" % path, file=sys.stderr)
             return 1
-        out, err = remove_menu_item(data, title)
-        if err:
-            print("✗ %s" % err, file=sys.stderr)
+        out, result = remove_menu_item(data, title)
+        if out is None:
+            print("✗ %s" % result, file=sys.stderr)
             return 1
         open(path, "wb").write(out)
-        print("   removed menu item %r" % title)
+        print("   removed %d menu item(s) titled %r" % (result, title))
         return 0
 
     # Anything else must be exactly FILE OLD NEW. Without this, a call like

@@ -273,7 +273,11 @@ fi
 # Both open the same window, so removing one leaves the window one click
 # away in the other. That is exactly what happened: the app menu was clean
 # and the settings were still reachable.
-for item in "Preferences…" "Preferences..."; do
+# Sparkle's updater item goes too: it appears in BOTH menus, and it has
+# never been able to install here -- it gets as far as launching its own
+# helper and times out. Our own "Check for Updates..." is in the menu bar
+# menu and works.
+for item in "Preferences…" "Preferences..." "Check for Updates..."; do
   python3 build/rename-nib.py "$APP/Contents/Resources/MainMenu.nib" \
     --remove-item "$item" \
     || { echo "✗ could not remove the menu item \"$item\"" >&2 ; exit 1 ; }

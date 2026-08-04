@@ -1069,6 +1069,10 @@ button.del:hover { background:#f9e9e6; }
 .toggle .sw { display:flex; align-items:center; gap:9px; font-size:13px; font-weight:600; cursor:pointer; }
 .toggle .sw input { width:17px; height:17px; accent-color:var(--accent); cursor:pointer; }
 .toggle .note { font-size:11.5px; color:#8a877d; margin:3px 0 0 26px; }
+.setrow { display:flex; align-items:center; gap:10px; font-size:14px;
+  padding:10px 0; border-bottom:1px solid var(--line); cursor:pointer; }
+.setrow input { width:16px; height:16px; accent-color:var(--accent); }
+.hint { font-size:12px; color:var(--muted); margin-top:14px; }
 nav.tabs { display:flex; gap:4px; padding:0 24px; background:linear-gradient(180deg,var(--accent),var(--accentDark));
   transition:background .18s; }
 nav.tabs button { background:transparent; color:rgba(255,255,255,.72); font-size:13px; font-weight:600;
@@ -1156,6 +1160,20 @@ nav.tabs button.on { background:var(--paper); color:var(--accent); }
 
 <main id="page-help" class="page"><div class="doc" id="help-body"></div></main>
 
+<main id="page-set" class="page">
+  <div class="doc">
+    <h2>Settings</h2>
+    <p>These replace the engine&rsquo;s own preferences window, which this app removes.</p>
+    <label class="setrow"><input type="checkbox" id="pf-login"
+      onchange="setPref('login', this.checked)"> Open CobAlt at login</label>
+    <label class="setrow"><input type="checkbox" id="pf-dock"
+      onchange="setPref('dock', this.checked)"> Show Dock icon</label>
+    <label class="setrow"><input type="checkbox" id="pf-menubar"
+      onchange="setPref('menubar', this.checked)"> Show menu bar icon</label>
+    <p class="hint" id="pf-warn">Keep at least one of the Dock icon and the
+      menu bar icon, or there is no way left to open this window.</p>
+  </div>
+</main>
 <main id="page-fb" class="page">
   <div class="statsbar" id="statsbar" style="display:none">
     <div><div class="big" id="st-avg">–</div><div class="lbl">average rating</div></div>
@@ -1349,12 +1367,25 @@ function pageHTML(a) {
   '</main>';
 }
 
+function setPref(key, value) { send({ op: 'setpref', key: key, value: value }); }
+
+// Called by the engine after every change, so the boxes always show what
+// the app actually did -- a refused change (the last way in) must not
+// leave a box looking switched.
+function renderSettings(s) {
+  const set = (id, on) => { const el = $(id); if (el) el.checked = !!on; };
+  set('pf-login', s.login);
+  set('pf-dock', s.dock);
+  set('pf-menubar', s.menubar);
+}
+
 function render(list) {
   apps = list;
   if (!$('tabs').dataset.built) {
     $('tabs').innerHTML = list.map(a =>
       '<button id="tab-' + a.id + '" onclick="showPage(\'' + a.id + '\')">' + esc(a.label) + '</button>').join('') +
       '<button id="tab-help" onclick="showPage(\'help\')">How to use</button>' +
+      '<button id="tab-set" onclick="showPage(\'set\')">Settings</button>' +
       '<button id="tab-fb" onclick="showPage(\'fb\')">Feedback</button>';
     $('pages').innerHTML = list.map(pageHTML).join('');
     $('tabs').dataset.built = '1';
@@ -1536,6 +1567,23 @@ send({ op: 'load' });
 ]==]
 
 function pushCatalogRef() end   -- forward declaration (set below)
+-- Both default on. They are only ever false if the user turned them off.
+if ExcelAlt.dockIcon  == nil then ExcelAlt.dockIcon  = true end
+if ExcelAlt.menubarOn == nil then ExcelAlt.menubarOn = true end
+
+-- Reading this can fail on an engine without the call; treat that as off
+-- rather than letting it take the whole panel down.
+local function loginItemOn()
+  local ok, v = pcall(function() return hs.autoLaunch() end)
+  return ok and v == true
+end
+
+-- Applying a preference is separate from storing it, because startup has
+-- to apply them too.
+local function applyDockIcon()
+  pcall(function() hs.dockIcon(ExcelAlt.dockIcon ~= false) end)
+end
+
 local function pushCatalog()
   if not ExcelAlt.manager then return end
   local payload = {}
@@ -1549,6 +1597,12 @@ local function pushCatalog()
     }
   end
   ExcelAlt.manager:evaluateJavaScript("render(" .. hs.json.encode(payload) .. ")")
+  ExcelAlt.manager:evaluateJavaScript(
+    "renderSettings(" .. hs.json.encode({
+      login   = loginItemOn(),
+      dock    = ExcelAlt.dockIcon ~= false,
+      menubar = ExcelAlt.menubarOn ~= false,
+    }) .. ")")
   ExcelAlt.manager:evaluateJavaScript("setStatus(" .. tostring(hs.accessibilityState() == true) .. ")")
   ExcelAlt.manager:evaluateJavaScript("setTutorial(" .. hs.json.encode(TUTORIAL) .. ")")
   ExcelAlt.manager:evaluateJavaScript("setVersion(" .. hs.json.encode(ExcelAlt.version) .. ")")
@@ -1563,6 +1617,8 @@ local function savePrefs()
     -- The version the user last answered "Later" to. Automatic checks
     -- stay quiet about it; a manual check still offers it.
     skipVersion = ExcelAlt.skipVersion,
+    dockIcon    = ExcelAlt.dockIcon,
+    menubarOn   = ExcelAlt.menubarOn,
   })
 end
 
@@ -1652,6 +1708,9 @@ end
 -- "turning Excel off silences Word" reaches the user.
 -- The updater is defined further down; the manager needs to reach it.
 local checkForUpdatesRef = function() end
+-- Assigned once setupMenubar exists; the settings panel can turn the
+-- status item back on, and that happens long before this file ends.
+local setupMenubarRef = function() end
 
 local function handleWebMessage(b)
   if type(b) ~= "table" then return end
@@ -1677,6 +1736,35 @@ local function handleWebMessage(b)
         updateTaps()
         pcall(pushCatalogRef)   -- so the page's warning banner matches
       end
+    elseif b.op == "setpref" then
+      local want = b.value == true
+      if b.key == "login" then
+        pcall(function() hs.autoLaunch(want) end)
+      elseif b.key == "dock" then
+        -- Refuse to leave the app with no way in. With no Dock icon and
+        -- no menu bar item there is nothing left to click.
+        if not want and ExcelAlt.menubarOn == false then
+          say("Keep the Dock icon or the menu bar icon", 3)
+        else
+          ExcelAlt.dockIcon = want ; savePrefs() ; applyDockIcon()
+        end
+      elseif b.key == "menubar" then
+        if not want and ExcelAlt.dockIcon == false then
+          say("Keep the Dock icon or the menu bar icon", 3)
+        else
+          ExcelAlt.menubarOn = want ; savePrefs()
+          if want then
+            ExcelAlt.barSetupRan = nil
+            setupMenubarRef()
+          else
+            pcall(function() if ExcelAlt.bar then ExcelAlt.bar:delete() end end)
+            ExcelAlt.bar = nil
+            ExcelAlt.menubarStatus = "off"
+          end
+        end
+      end
+      dlog("preference " .. tostring(b.key) .. " -> " .. tostring(want))
+      pushCatalog()
     elseif b.op == "checkupdates" then
       checkForUpdatesRef()
     elseif b.op == "axsettings" then
@@ -2060,11 +2148,6 @@ end
 
 -- Reading this can fail on an engine without the call; treat that as off
 -- rather than letting it take the whole menu down.
-local function loginItemOn()
-  local ok, v = pcall(function() return hs.autoLaunch() end)
-  return ok and v == true
-end
-
 local function menubarMenu()
   local accessOK = hs.accessibilityState()
   local hostItems, overlayItems = {}, {}
@@ -2364,6 +2447,8 @@ if prefs then
     end
   end
   if type(prefs.skipVersion) == "string" then ExcelAlt.skipVersion = prefs.skipVersion end
+  if prefs.dockIcon  == false then ExcelAlt.dockIcon  = false end
+  if prefs.menubarOn == false then ExcelAlt.menubarOn = false end
 end
 
 ExcelAlt.flagsTap = hs.eventtap.new({ hs.eventtap.event.types.flagsChanged }, safely(handleFlags))
@@ -2435,6 +2520,7 @@ pcall(openManager)
 -- off here instead — early, before anything else can show them.
 --
 -- pcall each: an engine that lacks one of these should still start.
+applyDockIcon()
 pcall(function() hs.menuIcon(false) end)
 
 -- ...and keep it off.
@@ -2466,8 +2552,15 @@ pcall(function() hs.closeConsole() end)
 -- Retained: an unreferenced doAfter can be collected before it fires,
 -- which is why the environment probe never logged a single line — the
 -- ladder we did see was started from the Accessibility path instead.
+setupMenubarRef = function() setupMenubar() end
+
 ExcelAlt.startupBar = hs.timer.doAfter(2, function()
   logMenubarEnvironment()
+  if ExcelAlt.menubarOn == false then
+    dlog("menubar: switched off in preferences")
+    ExcelAlt.menubarStatus = "off"
+    return
+  end
   setupMenubar()
 end)
 
@@ -2502,7 +2595,7 @@ local function grantReady()
   hs.timer.doAfter(1, function()
     -- Guarded inside: if the startup timer already ran it, this is a
     -- no-op. Both firing at once is what damaged the menu bar.
-    setupMenubar()
+    if ExcelAlt.menubarOn ~= false then setupMenubar() end
   end)
   hs.alert.show(APPNAME .. " ready — tap ⌥ in Excel, PowerPoint or Word", 1.5)
 end

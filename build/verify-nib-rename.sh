@@ -95,7 +95,7 @@ echo "→ Removing BOTH Preferences items"
 # One lives in the app menu (real ellipsis), one in the engine's own
 # status menu (three dots). Both open the same window, so leaving either
 # leaves the settings reachable.
-for item in "Preferences…" "Preferences..."; do
+for item in "Preferences…" "Preferences..." "Check for Updates..."; do
   python3 build/rename-nib.py "$NIBS/MainMenu.nib" --remove-item "$item"
 done
 gone_from_menus() {
@@ -110,7 +110,7 @@ for i in range(len(a["objects"])):
 sys.exit(0)
 PY
 }
-for item in "Preferences…" "Preferences..."; do
+for item in "Preferences…" "Preferences..." "Check for Updates..."; do
   if gone_from_menus "$item"; then echo "  ✓ no menu holds: $item"
   else echo "  ✗ STILL IN A MENU: $item" >&2 ; fail=1 ; fi
 done
@@ -118,7 +118,6 @@ done
 # empties the menu without complaining.
 expect_present "Quit CobAlt"
 expect_present "About CobAlt"
-expect_present "Check for Updates..."
 
 echo
 echo "→ Edited nibs must still parse and round-trip"
