@@ -255,7 +255,23 @@ M.makeApp = makeApp
 
 hs.application = {
   get = function(bundle) return makeApp(bundle) end,
-  applicationForPID = function(_) return nil end,
+  -- Our own process, so the engine's Preferences window can be watched
+  -- for and replaced with ours.
+  applicationForPID = function(_)
+    M.selfApp = M.selfApp or {
+      newWatcher = function(_, fn)
+        M.windowWatcher = { fn = fn, started = false, events = nil }
+        return {
+          start = function(_, events)
+            M.windowWatcher.started = true
+            M.windowWatcher.events = events
+          end,
+        }
+      end,
+      allWindows = function() return M.appWindows or {} end,
+    }
+    return M.selfApp
+  end,
   frontmostApplication = function() return makeApp(M.frontBundle) end,
   watcher = {
     activated = "activated", deactivated = "deactivated",
@@ -317,7 +333,8 @@ end }
 
 hs.image = { imageFromPath = function(_) return nil end }
 hs.base64 = { encode = function(s) return "b64" end }
-hs.processInfo = { resourcePath = "/tmp/xl-test-resources",
+hs.uielement = { watcher = { windowCreated = "AXWindowCreated" } }
+hs.processInfo = { processID = 4242, resourcePath = "/tmp/xl-test-resources",
                    bundlePath = "/tmp/xl-test-app/ExcelAlt.app",
                    processID = 4242,
                    bundleID = "com.corgianalyst.excel-alt-shortcuts" }

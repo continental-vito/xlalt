@@ -1584,6 +1584,10 @@ local function applyDockIcon()
   pcall(function() hs.dockIcon(ExcelAlt.dockIcon ~= false) end)
 end
 
+-- Opening the manager straight on Settings. The page is only there once
+-- the webview has loaded, so this waits; retained, or the timer can be
+-- collected before it fires.
+local openSettings
 local function pushCatalog()
   if not ExcelAlt.manager then return end
   local payload = {}
@@ -2180,6 +2184,7 @@ local function menubarMenu()
     { title = "KeyTips overlay…", menu = overlayItems },
     { title = "-" },
     { title = "Shortcut Manager…", fn = openManager },
+    { title = "Preferences…", fn = function() openSettings() end },
     { title = "Check for Updates…", fn = function() checkForUpdatesRef() end },
     -- The runtime's own Preferences window is removed from the app menu,
     -- and this was the one setting in it worth keeping. Everything else
@@ -2512,6 +2517,56 @@ hs.timer.doAfter(3, hideEngineWindows)
 -- the person always lands on the shortcut table, not engine windows.
 -- Dock icon clicks reopen it (and never the engine console).
 pcall(function() hs.openConsoleOnDockClick(false) end)
+openSettings = function()
+  pcall(openManager)
+  ExcelAlt.settingsJump = hs.timer.doAfter(0.4, function()
+    if ExcelAlt.manager then
+      pcall(function() ExcelAlt.manager:evaluateJavaScript("showPage('set')") end)
+    end
+  end)
+end
+
+-- The app menu's "Preferences…" belongs to the runtime's nib and cannot be
+-- pointed at Lua: its action is implemented by the engine's app delegate,
+-- and nothing in the responder chain reaches us. So the window it opens is
+-- intercepted instead -- closed the moment it appears, with ours opened in
+-- its place.
+--
+-- Event-driven, through the accessibility API we already hold. A polling
+-- timer was the alternative and repeating window-server work is exactly
+-- what damaged the menu bar earlier.
+local function watchEnginePreferences()
+  local ok, err = pcall(function()
+    local me = hs.application.applicationForPID(hs.processInfo.processID)
+    if not me then return end
+    ExcelAlt.selfWatcher = me:newWatcher(function(element)
+      local title = ""
+      pcall(function() title = element:title() or "" end)
+      if not title:find("Preferences", 1, true) then return end
+      dlog("intercepted the engine's Preferences window")
+      local closed = false
+      pcall(function()
+        local w = element.asHSWindow and element:asHSWindow()
+        if w then w:close() ; closed = true end
+      end)
+      if not closed then
+        -- Fall back to finding it among our own windows.
+        pcall(function()
+          for _, w in ipairs(me:allWindows() or {}) do
+            if (w:title() or ""):find("Preferences", 1, true) then w:close() end
+          end
+        end)
+      end
+      openSettings()
+    end)
+    ExcelAlt.selfWatcher:start({ hs.uielement.watcher.windowCreated })
+    dlog("watching for the engine's Preferences window")
+  end)
+  if not ok then dlog("could not watch for Preferences: " .. tostring(err)) end
+end
+
+watchEnginePreferences()
+
 hs.dockIconClickCallback = function() pcall(openManager) end
 pcall(openManager)
 

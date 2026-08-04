@@ -872,6 +872,44 @@ ExcelAlt.barSetupRan = nil
 T.setupMenubar() ; mock.flushTimers(2)
 local secondName = mock.log.menubars[#mock.log.menubars]
   and mock.log.menubars[#mock.log.menubars].autosaveName
+-- The app menu's Preferences item belongs to the runtime and cannot be
+-- pointed at Lua, so the window it opens is intercepted and ours opened
+-- instead. If that watcher is not running, clicking Preferences gives the
+-- user the engine's settings, which is the thing we are replacing.
+do
+  check("a watcher is started for the engine's own windows",
+    mock.windowWatcher ~= nil and mock.windowWatcher.started == true)
+  check("and it listens for windows being created",
+    mock.windowWatcher ~= nil and mock.windowWatcher.events ~= nil
+      and mock.windowWatcher.events[1] == "AXWindowCreated",
+    mock.windowWatcher and tostring(mock.windowWatcher.events
+      and mock.windowWatcher.events[1]))
+
+  local closed = false
+  local prefsWindow = {
+    title = function() return "CobAlt Preferences" end,
+    asHSWindow = function(self) return { close = function() closed = true end } end,
+  }
+  ExcelAlt.settingsJump = nil
+  mock.windowWatcher.fn(prefsWindow)
+  check("the engine's Preferences window is closed on sight", closed)
+  -- The webview is never constructed headlessly, so the jump to the
+  -- Settings page can only be observed as the retained timer that
+  -- performs it once the page has loaded.
+  check("and ours is opened, on its way to the Settings page",
+    ExcelAlt.settingsJump ~= nil)
+
+  -- Any other window of ours must be left alone.
+  closed = false
+  ExcelAlt.settingsJump = nil
+  mock.windowWatcher.fn({
+    title = function() return "CobAlt Shortcut Manager" end,
+    asHSWindow = function() return { close = function() closed = true end } end,
+  })
+  check("other windows are left alone",
+    closed == false and ExcelAlt.settingsJump == nil)
+end
+
 -- The runtime's Preferences window is unlinked from the app menu, so the
 -- one setting in it worth keeping has to live in ours.
 do

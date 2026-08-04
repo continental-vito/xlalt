@@ -267,24 +267,30 @@ fi
 # NOTE the ellipsis: the app menu uses U+2026 while the engine's own status
 # menu uses three dots. They are different objects in different menus, and
 # removing the three-dot one changes nothing a user can see.
-# There are TWO items reading "Preferences", in two different menus:
-#   * the app menu's, with a real ellipsis (U+2026)
-#   * the engine's own status-item menu, with three dots
-# Both open the same window, so removing one leaves the window one click
-# away in the other. That is exactly what happened: the app menu was clean
-# and the settings were still reachable.
-# Sparkle's updater item goes too: it appears in BOTH menus, and it has
-# never been able to install here -- it gets as far as launching its own
-# helper and times out. Our own "Check for Updates..." is in the menu bar
-# menu and works.
-for item in "Preferences…" "Preferences..." "Check for Updates..."; do
+# Trim the app menu to About / Preferences / Hide / Quit.
+#
+# What goes:
+#   Check for Updates...  Sparkle's, in BOTH menus. It has never been able
+#                         to install here -- it reaches its own helper and
+#                         times out. Ours is in the menu bar menu.
+#   Services, Hide Others, Show All   not useful for this app.
+#   Preferences...        the three-dot one, in the engine's own status
+#                         menu. NOT the app menu's, which uses a real
+#                         ellipsis and is kept: the engine's window is
+#                         intercepted at runtime and ours opened instead.
+for item in "Check for Updates..." "Services" "Hide Others" "Show All" "Preferences..."; do
   python3 build/rename-nib.py "$APP/Contents/Resources/MainMenu.nib" \
     --remove-item "$item" \
     || { echo "✗ could not remove the menu item \"$item\"" >&2 ; exit 1 ; }
 done
+# The app menu's Preferences must SURVIVE: it is the entry point to our
+# own settings.
+strings -a "$APP/Contents/Resources/MainMenu.nib" | grep -qx "Preferences…" \
+  || { echo "✗ the app menu lost its Preferences item" >&2 ; exit 1 ; }
+
 # The surrounding items must survive: removing an entry shifts every value
 # index after it, and getting that wrong silently empties the menu.
-for keep in "Quit $XL_DISPLAY_NAME" "About $XL_DISPLAY_NAME" "Check for Updates..."; do
+for keep in "Quit $XL_DISPLAY_NAME" "About $XL_DISPLAY_NAME" "Hide $XL_DISPLAY_NAME"; do
   strings -a "$APP/Contents/Resources/MainMenu.nib" | grep -qx "$keep" \
     || { echo "✗ the app menu lost \"$keep\"" >&2 ; exit 1 ; }
 done
