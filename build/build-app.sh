@@ -278,18 +278,17 @@ fi
 #                         menu. NOT the app menu's, which uses a real
 #                         ellipsis and is kept: the engine's window is
 #                         intercepted at runtime and ours opened instead.
-for item in "Check for Updates..." "Services" "Hide Others" "Show All" "Preferences..."; do
+for item in "Check for Updates..." "Services" "Hide Others" "Show All" \
+            "Preferences..." "Preferences…"; do
   python3 build/rename-nib.py "$APP/Contents/Resources/MainMenu.nib" \
     --remove-item "$item" \
     || { echo "✗ could not remove the menu item \"$item\"" >&2 ; exit 1 ; }
 done
 # The app menu's Preferences must SURVIVE: it is the entry point to our
 # own settings.
-# Parsed, not grepped: `strings` emits ASCII runs, so a title with a real
-# ellipsis comes out split and never matches.
-python3 build/rename-nib.py "$APP/Contents/Resources/MainMenu.nib" \
-  --assert-item "Preferences…" \
-  || { echo "✗ the app menu lost its Preferences item" >&2 ; exit 1 ; }
+# Both Preferences items go. Keeping the app menu's one only makes sense
+# if it can be pointed at our settings, and the only way to do that
+# crashed the app on launch.
 
 # The surrounding items must survive: removing an entry shifts every value
 # index after it, and getting that wrong silently empties the menu.
