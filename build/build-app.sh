@@ -278,8 +278,13 @@ fi
 #                         menu. NOT the app menu's, which uses a real
 #                         ellipsis and is kept: the engine's window is
 #                         intercepted at runtime and ours opened instead.
-for item in "Check for Updates..." "Services" "Hide Others" "Show All" \
-            "Preferences..." "Preferences…"; do
+# Only the two Preferences items -- exactly what the last build known to
+# start was doing. Services, Hide Others, Show All and Sparkle's Check for
+# Updates were added to this list afterwards and the app began crashing at
+# launch. Services in particular is not an ordinary item: AppKit wires it
+# to NSApp.servicesMenu when the nib loads, and unlinking it leaves that
+# outlet pointing at nothing.
+for item in "Preferences..." "Preferences…"; do
   python3 build/rename-nib.py "$APP/Contents/Resources/MainMenu.nib" \
     --remove-item "$item" \
     || { echo "✗ could not remove the menu item \"$item\"" >&2 ; exit 1 ; }

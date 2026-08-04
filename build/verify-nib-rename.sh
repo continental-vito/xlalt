@@ -95,8 +95,7 @@ echo "→ Trimming the app menu to About / Preferences / Hide / Quit"
 # One lives in the app menu (real ellipsis), one in the engine's own
 # status menu (three dots). Both open the same window, so leaving either
 # leaves the settings reachable.
-for item in "Check for Updates..." "Services" "Hide Others" "Show All" \
-            "Preferences..." "Preferences…"; do
+for item in "Preferences..." "Preferences…"; do
   python3 build/rename-nib.py "$NIBS/MainMenu.nib" --remove-item "$item"
 done
 gone_from_menus() {
@@ -111,8 +110,7 @@ for i in range(len(a["objects"])):
 sys.exit(0)
 PY
 }
-for item in "Check for Updates..." "Services" "Hide Others" "Show All" \
-            "Preferences..." "Preferences…"; do
+for item in "Preferences..." "Preferences…"; do
   if gone_from_menus "$item"; then echo "  ✓ no menu holds: $item"
   else echo "  ✗ STILL IN A MENU: $item" >&2 ; fail=1 ; fi
 done
@@ -121,6 +119,7 @@ done
 expect_present "Quit CobAlt"
 expect_present "About CobAlt"
 expect_present "Hide CobAlt"
+expect_present "Services"
 # The app menu keeps its Preferences item -- it is the way into our own
 # settings. Only the engine's status-menu copy (three dots) is removed.
 
