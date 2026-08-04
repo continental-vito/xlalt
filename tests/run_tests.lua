@@ -872,40 +872,49 @@ ExcelAlt.barSetupRan = nil
 T.setupMenubar() ; mock.flushTimers(2)
 local secondName = mock.log.menubars[#mock.log.menubars]
   and mock.log.menubars[#mock.log.menubars].autosaveName
--- The app menu's Preferences item belongs to the runtime and cannot be
+-- The app menu's Settings item belongs to the runtime and cannot be
 -- pointed at Lua, so the window it opens is intercepted and ours opened
 -- instead.
 do
+  local function win(title)
+    return { title = function() return title end,
+             close = function(self) self.closed = true end }
+  end
   check("a watcher is started for the engine's own windows",
     mock.windowWatcher ~= nil and mock.windowWatcher.started == true)
-  check("and it listens for windows being created",
+  -- windowCreated alone caught only the first open: AppKit reuses the
+  -- window afterwards and creates nothing, so the second click showed the
+  -- engine's settings.
+  check("and it listens for reopens as well as first opens",
     mock.windowWatcher ~= nil and mock.windowWatcher.events ~= nil
-      and mock.windowWatcher.events[1] == "AXWindowCreated")
+      and #mock.windowWatcher.events == 2,
+    mock.windowWatcher and table.concat(mock.windowWatcher.events or {}, ","))
 
-  local closed = false
+  local prefs = win("CobAlt Preferences")
+  mock.appWindows = { win("CobAlt Shortcut Manager"), prefs }
   ExcelAlt.settingsJump = nil
-  mock.windowWatcher.fn({
-    title = function() return "CobAlt Preferences" end,
-    asHSWindow = function() return { close = function() closed = true end } end,
-  })
-  check("the engine's Preferences window is closed on sight", closed)
+  mock.windowWatcher.fn()
+  check("the engine's Preferences window is closed", prefs.closed == true)
   check("and ours is opened, on its way to the Settings page",
     ExcelAlt.settingsJump ~= nil)
 
-  closed = false ; ExcelAlt.settingsJump = nil
-  mock.windowWatcher.fn({
-    title = function() return "CobAlt Shortcut Manager" end,
-    asHSWindow = function() return { close = function() closed = true end } end,
-  })
-  check("other windows are left alone",
-    closed == false and ExcelAlt.settingsJump == nil)
+  -- Firing again with the window gone must not reopen anything, or every
+  -- focus change would raise the manager.
+  ExcelAlt.settingsJump = nil
+  mock.appWindows = { win("CobAlt Shortcut Manager") }
+  mock.windowWatcher.fn()
+  check("an event with no Preferences window does nothing",
+    ExcelAlt.settingsJump == nil)
 
-  -- A throw inside a watcher callback is an uncaught Objective-C
-  -- exception, which is a crash and not a log line.
-  local ok = pcall(mock.windowWatcher.fn, {
-    title = function() error("boom") end,
-  })
+  -- Our own manager must never be mistaken for it.
+  local mgr = win("CobAlt Shortcut Manager")
+  mock.appWindows = { mgr }
+  mock.windowWatcher.fn()
+  check("the manager window is never closed", mgr.closed == nil)
+
+  local ok = pcall(mock.windowWatcher.fn)
   check("a callback that throws does not escape", ok == true)
+  mock.appWindows = {}
 end
 
 -- The runtime's Preferences window is unlinked from the app menu, so the

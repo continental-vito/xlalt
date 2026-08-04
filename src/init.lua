@@ -1418,6 +1418,7 @@ function applyTheme(a) {
 const NEUTRAL = { accent: '#5A6169', accent2: '#767D85', accentDark: '#454A50' };
 const SUBTITLE = {
   help: 'How CobAlt works, and how to build shortcuts of your own.',
+  set: 'Settings for CobAlt itself.',
   fb: 'Tell me what works and what is missing.',
 };
 
@@ -1429,7 +1430,7 @@ function showPage(which) {
     if (p) p.className = 'page' + (which === a.id ? ' on' : '');
     if (t) t.className = (which === a.id ? 'on' : '');
   });
-  ['help', 'fb'].forEach(k => {
+  ['help', 'set', 'fb'].forEach(k => {
     $('page-' + k).className = 'page' + (which === k ? ' on' : '');
     $('tab-' + k).className = (which === k ? 'on' : '');
   });
@@ -2526,37 +2527,55 @@ openSettings = function()
   end)
 end
 
--- The app menu's "Preferences…" cannot be pointed at Lua: its action is
+-- The app menu's "Settings…" cannot be pointed at Lua: its action is
 -- implemented by the engine's app delegate and nothing in the responder
 -- chain reaches us. So the window it opens is intercepted -- closed as it
 -- appears, with ours opened instead.
 --
--- This was blamed for a launch crash and removed. The crash report says
--- otherwise: the app died in -[NSMenu dealloc] inside loadNib, under
--- NSApplicationMain, before any Lua ran. The cause was unlinking the
--- Services menu item, which owns a submenu. This code was never reached.
+-- Watching only for windowCreated caught the FIRST open and nothing
+-- after: AppKit keeps the window controller alive and simply re-orders
+-- the same window front, so no window is created the second time. The
+-- watcher therefore listens for focus changes too, and every event scans
+-- our own windows rather than trusting whatever element was handed over.
 --
--- Every part is wrapped: a throw inside a watcher callback becomes an
--- uncaught Objective-C exception, and that is a crash rather than an
--- error in the log.
+-- (This was once blamed for a launch crash. The crash report showed the
+-- app dying in -[NSMenu dealloc] inside loadNib, before any Lua ran; the
+-- cause was unlinking the Services item, which owns a submenu.)
+local function interceptEnginePreferences(me)
+  local closed = false
+  pcall(function()
+    for _, w in ipairs(me:allWindows() or {}) do
+      local t = ""
+      pcall(function() t = w:title() or "" end)
+      -- The title comes from the engine's nib, e.g. "CobAlt Preferences".
+      -- Our own windows must never match; the manager is "… Shortcut
+      -- Manager".
+      if t:find("Preferences", 1, true)
+         and not t:find("Shortcut Manager", 1, true) then
+        pcall(function() w:close() end)
+        closed = true
+      end
+    end
+  end)
+  if closed then
+    dlog("intercepted the engine's Preferences window")
+    openSettings()
+  end
+end
+
 local function watchEnginePreferences()
   local ok, err = pcall(function()
     local me = hs.application.applicationForPID(hs.processInfo.processID)
     if not me then return end
-    ExcelAlt.selfWatcher = me:newWatcher(function(element)
-      pcall(function()
-        local title = ""
-        pcall(function() title = element:title() or "" end)
-        if not title:find("Preferences", 1, true) then return end
-        dlog("intercepted the engine's Preferences window")
-        pcall(function()
-          local w = element.asHSWindow and element:asHSWindow()
-          if w then w:close() end
-        end)
-        openSettings()
-      end)
+    -- Wrapped: a throw inside a watcher callback is an uncaught
+    -- Objective-C exception, which crashes rather than logging.
+    ExcelAlt.selfWatcher = me:newWatcher(function()
+      pcall(function() interceptEnginePreferences(me) end)
     end)
-    ExcelAlt.selfWatcher:start({ hs.uielement.watcher.windowCreated })
+    ExcelAlt.selfWatcher:start({
+      hs.uielement.watcher.windowCreated,
+      hs.uielement.watcher.focusedWindowChanged,
+    })
     dlog("watching for the engine's Preferences window")
   end)
   if not ok then dlog("could not watch for Preferences: " .. tostring(err)) end

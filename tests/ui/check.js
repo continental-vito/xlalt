@@ -62,6 +62,20 @@ check('tab labels read Excel / PowerPoint / Word / How to use / Settings / Feedb
 // These replace the engine's own preferences window, which the build
 // removes from the app menu.
 w.renderSettings({ login: false, dock: true, menubar: true });
+// showPage knew about 'help' and 'fb' only, so selecting Settings hid
+// every page and showed none: the window came up blank.
+w.showPage('set');
+check('choosing Settings actually shows the settings page',
+  d.getElementById('page-set').className.indexOf('on') >= 0,
+  d.getElementById('page-set').className);
+check('and hides the others',
+  d.getElementById('page-help').className.indexOf('on') < 0);
+check('the subtitle is not left half-written',
+  !/Tap .* in ,/.test(d.getElementById('sub').textContent),
+  d.getElementById('sub').textContent);
+
+w.showPage('excel');   // leave the window as the later checks expect it
+
 check('the settings panel shows the three toggles',
   ['pf-login', 'pf-dock', 'pf-menubar'].every(id => d.getElementById(id)));
 check('and reflects what the engine reports',

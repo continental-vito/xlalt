@@ -333,7 +333,8 @@ end }
 
 hs.image = { imageFromPath = function(_) return nil end }
 hs.base64 = { encode = function(s) return "b64" end }
-hs.uielement = { watcher = { windowCreated = "AXWindowCreated" } }
+hs.uielement = { watcher = { windowCreated = "AXWindowCreated",
+                             focusedWindowChanged = "AXFocusedWindowChanged" } }
 hs.processInfo = { processID = 4242, resourcePath = "/tmp/xl-test-resources",
                    bundlePath = "/tmp/xl-test-app/ExcelAlt.app",
                    processID = 4242,
