@@ -285,7 +285,10 @@ for item in "Check for Updates..." "Services" "Hide Others" "Show All" "Preferen
 done
 # The app menu's Preferences must SURVIVE: it is the entry point to our
 # own settings.
-strings -a "$APP/Contents/Resources/MainMenu.nib" | grep -qx "Preferences…" \
+# Parsed, not grepped: `strings` emits ASCII runs, so a title with a real
+# ellipsis comes out split and never matches.
+python3 build/rename-nib.py "$APP/Contents/Resources/MainMenu.nib" \
+  --assert-item "Preferences…" \
   || { echo "✗ the app menu lost its Preferences item" >&2 ; exit 1 ; }
 
 # The surrounding items must survive: removing an entry shifts every value

@@ -317,6 +317,19 @@ def main(argv):
         print("   removed %d menu item(s) titled %r" % (result, title))
         return 0
 
+    if len(argv) == 4 and argv[2] == "--assert-item":
+        # `strings` cannot check this: it emits ASCII runs only, so a title
+        # containing a real ellipsis (U+2026) comes out split in two and a
+        # grep for it never matches. Parse instead.
+        a = parse(open(argv[1], "rb").read())
+        for i in range(len(a["objects"])):
+            if _cls(a, i) == "NSMenuItem" and _item_title(a, i) == argv[3] \
+                    and _in_a_menu(a, i):
+                print("   %r is in a menu" % argv[3])
+                return 0
+        print("✗ no menu holds an item titled %r" % argv[3], file=sys.stderr)
+        return 1
+
     # Anything else must be exactly FILE OLD NEW. Without this, a call like
     #   rename-nib.py MainMenu.nib --remove-item "Preferences…"
     # against a build of this tool that predates --remove-item reads as a

@@ -121,7 +121,11 @@ expect_present "About CobAlt"
 expect_present "Hide CobAlt"
 # The app menu keeps its Preferences item -- it is the way into our own
 # settings. Only the engine's status-menu copy (three dots) is removed.
-expect_present "Preferences…"
+if python3 build/rename-nib.py "$NIBS/MainMenu.nib" --assert-item "Preferences…"; then
+  echo "  ✓ the app menu keeps Preferences…"
+else
+  echo "  ✗ the app menu lost Preferences…" >&2 ; fail=1
+fi
 
 echo
 echo "→ Edited nibs must still parse and round-trip"
