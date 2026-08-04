@@ -872,6 +872,42 @@ ExcelAlt.barSetupRan = nil
 T.setupMenubar() ; mock.flushTimers(2)
 local secondName = mock.log.menubars[#mock.log.menubars]
   and mock.log.menubars[#mock.log.menubars].autosaveName
+-- The app menu's Preferences item belongs to the runtime and cannot be
+-- pointed at Lua, so the window it opens is intercepted and ours opened
+-- instead.
+do
+  check("a watcher is started for the engine's own windows",
+    mock.windowWatcher ~= nil and mock.windowWatcher.started == true)
+  check("and it listens for windows being created",
+    mock.windowWatcher ~= nil and mock.windowWatcher.events ~= nil
+      and mock.windowWatcher.events[1] == "AXWindowCreated")
+
+  local closed = false
+  ExcelAlt.settingsJump = nil
+  mock.windowWatcher.fn({
+    title = function() return "CobAlt Preferences" end,
+    asHSWindow = function() return { close = function() closed = true end } end,
+  })
+  check("the engine's Preferences window is closed on sight", closed)
+  check("and ours is opened, on its way to the Settings page",
+    ExcelAlt.settingsJump ~= nil)
+
+  closed = false ; ExcelAlt.settingsJump = nil
+  mock.windowWatcher.fn({
+    title = function() return "CobAlt Shortcut Manager" end,
+    asHSWindow = function() return { close = function() closed = true end } end,
+  })
+  check("other windows are left alone",
+    closed == false and ExcelAlt.settingsJump == nil)
+
+  -- A throw inside a watcher callback is an uncaught Objective-C
+  -- exception, which is a crash and not a log line.
+  local ok = pcall(mock.windowWatcher.fn, {
+    title = function() error("boom") end,
+  })
+  check("a callback that throws does not escape", ok == true)
+end
+
 -- The runtime's Preferences window is unlinked from the app menu, so the
 -- one setting in it worth keeping has to live in ours.
 do

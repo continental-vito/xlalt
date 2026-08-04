@@ -278,22 +278,24 @@ fi
 #                         menu. NOT the app menu's, which uses a real
 #                         ellipsis and is kept: the engine's window is
 #                         intercepted at runtime and ours opened instead.
-# Only the two Preferences items -- exactly what the last build known to
-# start was doing. Services, Hide Others, Show All and Sparkle's Check for
-# Updates were added to this list afterwards and the app began crashing at
-# launch. Services in particular is not an ordinary item: AppKit wires it
-# to NSApp.servicesMenu when the nib loads, and unlinking it leaves that
-# outlet pointing at nothing.
-for item in "Preferences..." "Preferences…"; do
+# Trim the app menu. NOT "Services": it owns a submenu, and unlinking it
+# orphans that NSMenu, which AppKit asserts on while the nib is still
+# loading -- the app dies before any of our code runs. rename-nib.py now
+# refuses such items outright, so this cannot be reintroduced by accident.
+#
+# "Preferences…" (real ellipsis) is KEPT: it is the app menu's, and the
+# window it opens is intercepted at runtime and replaced with ours. Only
+# the engine's status-menu copy (three dots) is removed.
+for item in "Check for Updates..." "Hide Others" "Show All" "Preferences..."; do
   python3 build/rename-nib.py "$APP/Contents/Resources/MainMenu.nib" \
     --remove-item "$item" \
     || { echo "✗ could not remove the menu item \"$item\"" >&2 ; exit 1 ; }
 done
 # The app menu's Preferences must SURVIVE: it is the entry point to our
 # own settings.
-# Both Preferences items go. Keeping the app menu's one only makes sense
-# if it can be pointed at our settings, and the only way to do that
-# crashed the app on launch.
+python3 build/rename-nib.py "$APP/Contents/Resources/MainMenu.nib" \
+  --assert-item "Preferences…" \
+  || { echo "✗ the app menu lost its Preferences item" >&2 ; exit 1 ; }
 
 # The surrounding items must survive: removing an entry shifts every value
 # index after it, and getting that wrong silently empties the menu.

@@ -2526,18 +2526,43 @@ openSettings = function()
   end)
 end
 
--- No self-watcher here.
---
 -- The app menu's "Preferences…" cannot be pointed at Lua: its action is
 -- implemented by the engine's app delegate and nothing in the responder
--- chain reaches us. The attempt was to intercept the window it opens with
--- an accessibility watcher on our OWN process -- and that crashed the app
--- on launch. An app observing itself through the accessibility API is a
--- known way to deadlock, and it is not worth a crash to replace a menu
--- item.
+-- chain reaches us. So the window it opens is intercepted -- closed as it
+-- appears, with ours opened instead.
 --
--- So the item is removed from the app menu instead, and our settings are
--- reached from the menu bar menu and the Shortcut Manager.
+-- This was blamed for a launch crash and removed. The crash report says
+-- otherwise: the app died in -[NSMenu dealloc] inside loadNib, under
+-- NSApplicationMain, before any Lua ran. The cause was unlinking the
+-- Services menu item, which owns a submenu. This code was never reached.
+--
+-- Every part is wrapped: a throw inside a watcher callback becomes an
+-- uncaught Objective-C exception, and that is a crash rather than an
+-- error in the log.
+local function watchEnginePreferences()
+  local ok, err = pcall(function()
+    local me = hs.application.applicationForPID(hs.processInfo.processID)
+    if not me then return end
+    ExcelAlt.selfWatcher = me:newWatcher(function(element)
+      pcall(function()
+        local title = ""
+        pcall(function() title = element:title() or "" end)
+        if not title:find("Preferences", 1, true) then return end
+        dlog("intercepted the engine's Preferences window")
+        pcall(function()
+          local w = element.asHSWindow and element:asHSWindow()
+          if w then w:close() end
+        end)
+        openSettings()
+      end)
+    end)
+    ExcelAlt.selfWatcher:start({ hs.uielement.watcher.windowCreated })
+    dlog("watching for the engine's Preferences window")
+  end)
+  if not ok then dlog("could not watch for Preferences: " .. tostring(err)) end
+end
+
+watchEnginePreferences()
 
 hs.dockIconClickCallback = function() pcall(openManager) end
 pcall(openManager)

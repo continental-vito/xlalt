@@ -95,9 +95,17 @@ echo "→ Trimming the app menu to About / Preferences / Hide / Quit"
 # One lives in the app menu (real ellipsis), one in the engine's own
 # status menu (three dots). Both open the same window, so leaving either
 # leaves the settings reachable.
-for item in "Preferences..." "Preferences…"; do
+for item in "Check for Updates..." "Hide Others" "Show All" "Preferences..."; do
   python3 build/rename-nib.py "$NIBS/MainMenu.nib" --remove-item "$item"
 done
+# An item owning a submenu must be refused: unlinking Services orphans an
+# NSMenu and AppKit asserts on it during nib load, killing the app before
+# any of our code runs.
+if python3 build/rename-nib.py "$NIBS/MainMenu.nib" --remove-item "Services" 2>/dev/null; then
+  echo "  ✗ Services was removed; that crashes the app at launch" >&2 ; fail=1
+else
+  echo "  ✓ refuses to remove an item that owns a submenu"
+fi
 gone_from_menus() {
   python3 - "$NIBS/MainMenu.nib" "$1" <<'PY'
 import importlib.util, sys
@@ -110,7 +118,7 @@ for i in range(len(a["objects"])):
 sys.exit(0)
 PY
 }
-for item in "Preferences..." "Preferences…"; do
+for item in "Check for Updates..." "Hide Others" "Show All" "Preferences..."; do
   if gone_from_menus "$item"; then echo "  ✓ no menu holds: $item"
   else echo "  ✗ STILL IN A MENU: $item" >&2 ; fail=1 ; fi
 done
@@ -120,6 +128,11 @@ expect_present "Quit CobAlt"
 expect_present "About CobAlt"
 expect_present "Hide CobAlt"
 expect_present "Services"
+if python3 build/rename-nib.py "$NIBS/MainMenu.nib" --assert-item "Preferences…"; then
+  echo "  ✓ the app menu keeps Preferences…"
+else
+  echo "  ✗ the app menu lost Preferences…" >&2 ; fail=1
+fi
 # The app menu keeps its Preferences item -- it is the way into our own
 # settings. Only the engine's status-menu copy (three dots) is removed.
 

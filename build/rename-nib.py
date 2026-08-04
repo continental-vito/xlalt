@@ -240,6 +240,22 @@ def _in_a_menu(a, target):
     return False
 
 
+def _owns_submenu(a, i):
+    """Does this item own a submenu?
+
+    Unlinking such an item orphans the NSMenu it owns, and AppKit asserts
+    in -[NSMenu dealloc] while the nib is still loading. The app dies
+    before any of our code runs, with an uncaught exception out of
+    NSApplicationMain. "Services" is the one in this nib.
+    """
+    keys = [k.rstrip(b"\x00").decode("latin1") for k in a["keys"]]
+    for _, v in _obj_values(a, i):
+        name = keys[v[0]] if v[0] < len(keys) else ""
+        if name == "NSSubmenu" and v[1] == 10:
+            return True
+    return False
+
+
 def _unlink_once(a, title):
     """Unlink one menu item with this title. Returns True if it did."""
     for i in range(len(a["objects"])):
@@ -285,6 +301,11 @@ def remove_menu_item(data, title):
     Item objects stay in the archive; only the menus' references go.
     """
     a = parse(data)
+    for i in range(len(a["objects"])):
+        if _cls(a, i) == "NSMenuItem" and _item_title(a, i) == title \
+                and _owns_submenu(a, i):
+            return None, ("%r owns a submenu; removing it crashes the app "
+                          "during nib load" % title)
     removed = 0
     while _unlink_once(a, title):
         removed += 1
