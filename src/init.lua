@@ -1073,6 +1073,10 @@ button.del:hover { background:#f9e9e6; }
   padding:10px 0; border-bottom:1px solid var(--line); cursor:pointer; }
 .setrow input { width:16px; height:16px; accent-color:var(--accent); }
 .hint { font-size:12px; color:var(--muted); margin-top:14px; }
+.setnext { margin-top:26px; }
+.doc .btn { font-size:14px; padding:8px 16px; border-radius:8px; cursor:pointer;
+  border:1px solid var(--line); background:var(--accent); color:#fff; }
+.doc .btn:hover { background:var(--accent2); }
 nav.tabs { display:flex; gap:4px; padding:0 24px; background:linear-gradient(180deg,var(--accent),var(--accentDark));
   transition:background .18s; }
 nav.tabs button { background:transparent; color:rgba(255,255,255,.72); font-size:13px; font-weight:600;
@@ -1172,6 +1176,11 @@ nav.tabs button.on { background:var(--paper); color:var(--accent); }
       onchange="setPref('menubar', this.checked)"> Show menu bar icon</label>
     <p class="hint" id="pf-warn">Keep at least one of the Dock icon and the
       menu bar icon, or there is no way left to open this window.</p>
+    <h2 class="setnext">Updates</h2>
+    <p>CobAlt checks on its own shortly after launch and every few hours.
+      This asks now.</p>
+    <button class="btn" id="pf-update"
+      onclick="send({op:'checkupdates'})">Check for updates</button>
   </div>
 </main>
 <main id="page-fb" class="page">
@@ -2185,7 +2194,7 @@ local function menubarMenu()
     { title = "KeyTips overlay…", menu = overlayItems },
     { title = "-" },
     { title = "Shortcut Manager…", fn = openManager },
-    { title = "Preferences…", fn = function() openSettings() end },
+    { title = "Settings…", fn = function() openSettings() end },
     { title = "Check for Updates…", fn = function() checkForUpdatesRef() end },
     -- The runtime's own Preferences window is removed from the app menu,
     -- and this was the one setting in it worth keeping. Everything else

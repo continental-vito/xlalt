@@ -278,28 +278,32 @@ fi
 #                         menu. NOT the app menu's, which uses a real
 #                         ellipsis and is kept: the engine's window is
 #                         intercepted at runtime and ours opened instead.
-# Trim the app menu. NOT "Services": it owns a submenu, and unlinking it
-# orphans that NSMenu, which AppKit asserts on while the nib is still
-# loading -- the app dies before any of our code runs. rename-nib.py now
-# refuses such items outright, so this cannot be reintroduced by accident.
+# Trim the app menu to About / Quit.
 #
-# "Preferences…" (real ellipsis) is KEPT: it is the app menu's, and the
-# window it opens is intercepted at runtime and replaced with ours. Only
-# the engine's status-menu copy (three dots) is removed.
-for item in "Check for Updates..." "Hide Others" "Show All" "Preferences..."; do
+# Removal unlinks the item from its menu, which is safe for a plain item
+# and fatal for one that owns a submenu: the orphaned NSMenu is
+# deallocated while the nib is still loading and AppKit asserts, killing
+# the app before any of our code runs. rename-nib.py refuses such items
+# outright now, so this cannot be reintroduced by accident.
+for item in "Check for Updates..." "Hide Others" "Show All" \
+            "Preferences..." "Preferences…" "Hide $XL_DISPLAY_NAME"; do
   python3 build/rename-nib.py "$APP/Contents/Resources/MainMenu.nib" \
     --remove-item "$item" \
     || { echo "✗ could not remove the menu item \"$item\"" >&2 ; exit 1 ; }
 done
-# The app menu's Preferences must SURVIVE: it is the entry point to our
-# own settings.
+
+# "Services" is the one item that owns a submenu, so it is hidden rather
+# than removed: the object graph is untouched and only a flag is added.
+# Worst case a future AppKit ignores the flag and the item reappears --
+# a cosmetic disappointment rather than a crash, which is the right way
+# round for this edit.
 python3 build/rename-nib.py "$APP/Contents/Resources/MainMenu.nib" \
-  --assert-item "Preferences…" \
-  || { echo "✗ the app menu lost its Preferences item" >&2 ; exit 1 ; }
+  --hide-item "Services" \
+  || { echo "✗ could not hide the Services menu item" >&2 ; exit 1 ; }
 
 # The surrounding items must survive: removing an entry shifts every value
 # index after it, and getting that wrong silently empties the menu.
-for keep in "Quit $XL_DISPLAY_NAME" "About $XL_DISPLAY_NAME" "Hide $XL_DISPLAY_NAME"; do
+for keep in "Quit $XL_DISPLAY_NAME" "About $XL_DISPLAY_NAME"; do
   strings -a "$APP/Contents/Resources/MainMenu.nib" | grep -qx "$keep" \
     || { echo "✗ the app menu lost \"$keep\"" >&2 ; exit 1 ; }
 done

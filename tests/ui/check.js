@@ -74,6 +74,16 @@ check('the subtitle is not left half-written',
   !/Tap .* in ,/.test(d.getElementById('sub').textContent),
   d.getElementById('sub').textContent);
 
+// Everything must be doable from Settings, including asking for an
+// update: the menu bar menu is not always available -- its icon is one of
+// the things this page can switch off.
+sent.length = 0;
+d.getElementById('pf-update').click();
+check('the settings page can ask for an update check',
+  sent.length === 1 && sent[0].op === 'checkupdates', JSON.stringify(sent));
+check('and that button is not a toggle',
+  d.getElementById('pf-update').tagName === 'BUTTON');
+
 w.showPage('excel');   // leave the window as the later checks expect it
 
 check('the settings panel shows the three toggles',

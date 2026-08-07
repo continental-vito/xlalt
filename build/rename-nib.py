@@ -221,6 +221,85 @@ def _drop_value(a, pos):
             a["objects"][j] = (c, vi - 1, vc)
 
 
+def _insert_value(a, obj_index, key_name, vtype, payload=b""):
+    """Append a value to an object, fixing every index that points past it.
+
+    The mirror of _drop_value: objects address values as (start, count)
+    into one flat list, so an insertion shifts everything after it.
+    """
+    keys = [k.rstrip(b"\x00") for k in a["keys"]]
+    want = key_name.encode()
+    if want in keys:
+        key_index = keys.index(want)
+    else:
+        key_index = len(a["keys"])
+        a["keys"].append(want)
+
+    _, vi, vc = a["objects"][obj_index]
+    at = vi + vc
+    a["values"].insert(at, [key_index, vtype, payload])
+    for j, (c, jvi, jvc) in enumerate(a["objects"]):
+        if j == obj_index:
+            a["objects"][j] = (c, jvi, jvc + 1)
+        elif jvi >= at:
+            a["objects"][j] = (c, jvi + 1, jvc)
+
+
+def hide_menu_item(data, title):
+    """Hide an item instead of unlinking it.
+
+    For an item that owns a submenu -- "Services" is the one here --
+    unlinking orphans that NSMenu and AppKit asserts on it during nib
+    load, killing the app before any of our code runs. Hiding changes
+    nothing about the object graph: the item and its submenu stay exactly
+    where they are, with one more flag on the item.
+
+    If a given AppKit version ignores NSIsHidden from a nib the item stays
+    visible. That is a cosmetic disappointment, not a crash, which is the
+    right way round for this particular edit.
+    """
+    a = parse(data)
+    hidden = 0
+    for i in range(len(a["objects"])):
+        if _cls(a, i) != "NSMenuItem" or _item_title(a, i) != title:
+            continue
+        keys = [k.rstrip(b"\x00").decode("latin1") for k in a["keys"]]
+        already = any(
+            (keys[v[0]] if v[0] < len(keys) else "") == "NSIsHidden"
+            for _, v in _obj_values(a, i))
+        if already:
+            continue
+        _insert_value(a, i, "NSIsHidden", 4)     # type 4 is boolean true
+        hidden += 1
+        # A hidden item between two separators leaves them adjacent, which
+        # draws as a double rule. Hide one of them too -- the same rule
+        # the removal path follows.
+        for j in range(len(a["objects"])):
+            if _cls(a, j) not in ("NSMutableArray", "NSArray"):
+                continue
+            members = [int.from_bytes(v[2], "little")
+                       for _, v in _obj_values(a, j) if v[1] == 10]
+            if i not in members:
+                continue
+            kinds = [_cls(a, m) for m in members if m < len(a["objects"])]
+            if kinds.count("NSMenuItem") < max(1, len(kinds) - 1):
+                continue
+            at = members.index(i)
+
+            def is_sep(n):
+                return (0 <= n < len(members)
+                        and _cls(a, members[n]) == "NSMenuItem"
+                        and _item_title(a, members[n]) is None)
+            if is_sep(at - 1) and is_sep(at + 1):
+                _insert_value(a, members[at + 1], "NSIsHidden", 4)
+            break
+    if hidden == 0:
+        return None, "no menu item titled %r to hide" % title
+    out = build(a)
+    parse(out)                                   # must still read back
+    return out, hidden
+
+
 def _in_a_menu(a, target):
     """Is this object still an entry in something that looks like a menu?
 
@@ -336,6 +415,20 @@ def main(argv):
             return 1
         open(path, "wb").write(out)
         print("   removed %d menu item(s) titled %r" % (result, title))
+        return 0
+
+    if len(argv) == 4 and argv[2] == "--hide-item":
+        path, title = argv[1], argv[3]
+        data = open(path, "rb").read()
+        if build(parse(data)) != data:
+            print("✗ %s does not round-trip; refusing to edit" % path, file=sys.stderr)
+            return 1
+        out, result = hide_menu_item(data, title)
+        if out is None:
+            print("✗ %s" % result, file=sys.stderr)
+            return 1
+        open(path, "wb").write(out)
+        print("   hid %d menu item(s) titled %r" % (result, title))
         return 0
 
     if len(argv) == 4 and argv[2] == "--assert-item":

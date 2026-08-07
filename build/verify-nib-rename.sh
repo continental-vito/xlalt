@@ -95,9 +95,11 @@ echo "→ Trimming the app menu to About / Preferences / Hide / Quit"
 # One lives in the app menu (real ellipsis), one in the engine's own
 # status menu (three dots). Both open the same window, so leaving either
 # leaves the settings reachable.
-for item in "Check for Updates..." "Hide Others" "Show All" "Preferences..."; do
+for item in "Check for Updates..." "Hide Others" "Show All" \
+            "Preferences..." "Preferences…" "Hide CobAlt"; do
   python3 build/rename-nib.py "$NIBS/MainMenu.nib" --remove-item "$item"
 done
+python3 build/rename-nib.py "$NIBS/MainMenu.nib" --hide-item "Services"
 # An item owning a submenu must be refused: unlinking Services orphans an
 # NSMenu and AppKit asserts on it during nib load, killing the app before
 # any of our code runs.
@@ -118,7 +120,8 @@ for i in range(len(a["objects"])):
 sys.exit(0)
 PY
 }
-for item in "Check for Updates..." "Hide Others" "Show All" "Preferences..."; do
+for item in "Check for Updates..." "Hide Others" "Show All" \
+            "Preferences..." "Preferences…" "Hide CobAlt"; do
   if gone_from_menus "$item"; then echo "  ✓ no menu holds: $item"
   else echo "  ✗ STILL IN A MENU: $item" >&2 ; fail=1 ; fi
 done
@@ -127,12 +130,24 @@ done
 expect_present "Quit CobAlt"
 expect_present "About CobAlt"
 expect_present "Hide CobAlt"
-expect_present "Services"
-if python3 build/rename-nib.py "$NIBS/MainMenu.nib" --assert-item "Preferences…"; then
-  echo "  ✓ the app menu keeps Preferences…"
-else
-  echo "  ✗ the app menu lost Preferences…" >&2 ; fail=1
-fi
+# Services is hidden, not removed: its submenu must still be attached, or
+# AppKit asserts on the orphan while the nib is loading.
+if python3 - "$NIBS/MainMenu.nib" <<'PY'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("rn", "build/rename-nib.py")
+rn = importlib.util.module_from_spec(spec); spec.loader.exec_module(rn)
+a = rn.parse(open(sys.argv[1], "rb").read())
+keys = [k.rstrip(b"\x00").decode("latin1") for k in a["keys"]]
+for i in range(len(a["objects"])):
+    if rn._cls(a, i) != "NSMenuItem" or rn._item_title(a, i) != "Services":
+        continue
+    names = [keys[v[0]] if v[0] < len(keys) else "" for _, v in rn._obj_values(a, i)]
+    sys.exit(0 if ("NSIsHidden" in names and "NSSubmenu" in names
+                   and rn._in_a_menu(a, i)) else 1)
+sys.exit(1)
+PY
+then echo "  ✓ Services is hidden, still in its menu, submenu attached"
+else echo "  ✗ Services is not hidden safely" >&2 ; fail=1 ; fi
 # The app menu keeps its Preferences item -- it is the way into our own
 # settings. Only the engine's status-menu copy (three dots) is removed.
 

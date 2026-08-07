@@ -929,6 +929,11 @@ do
   mock.loginItem = false
   local item = findItem("Open at login")
   check("the menu offers an open-at-login toggle", item ~= nil)
+  -- The entry names the page it opens; "Preferences" sent people looking
+  -- for a window that no longer exists.
+  check("the menu entry is called Settings, matching the page",
+    findItem("Settings\u{2026}") ~= nil and findItem("Preferences") == nil,
+    findItem("Preferences") and findItem("Preferences").title)
   check("and shows it off when it is off",
     item ~= nil and item.title:sub(1, 1) ~= "\u{2713}", item and item.title)
   if item then item.fn() end
