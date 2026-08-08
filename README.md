@@ -33,27 +33,23 @@ Office's ribbon shortcuts are muscle memory for anyone who learned these apps on
 3. Grant **Accessibility** when the app asks. Shortcuts activate immediately.
 4. Open Excel, tap **⌥**, start typing sequences.
 
-Updates after that arrive in-app: **ExcelAlt → Check for Updates**.
+Updates after that arrive in-app: the menu bar icon → **Check for Updates**, or **Shortcut Manager → Settings**.
 
-## Screenshots
+## See it work
 
 <div align="center">
 
-<img src="docs/screenshot-manager.png" width="780" alt="XL Shortcut Manager">
+<img src="docs/demo-excel.gif" width="780" alt="Tapping Option in Excel and typing a sequence">
 
-<sub>The Shortcut Manager — search, edit, and add shortcuts, with every command visible at a glance.</sub>
+<sub>Tap <b>⌥</b>, the KeyTips panel appears, type the sequence — the action runs.</sub>
+
+<br><br>
+
+<img src="docs/screenshot-excel.png" width="780" alt="CobAlt Shortcut Manager, Excel tab">
+
+<sub>The Shortcut Manager — search, edit and add shortcuts, with every command visible at a glance.</sub>
 
 </div>
-
-## Demo
-
-<!-- TO ADD THE VIDEO:
-     1. Open a new Issue in this repo (don't submit it)
-     2. Drag your .mp4 into the comment box and wait for upload
-     3. Copy the generated https://github.com/user-attachments/assets/... URL
-     4. Replace the italic line below with that URL on its own line -->
-
-_Video coming soon._
 
 ## Shortcuts
 
@@ -92,6 +88,19 @@ The same sequence can mean different things in different apps, and the KeyTips p
 | `H X` / `H B` | Superscript / subscript | `R C` | New comment |
 | `H A J` | Justify | `R T` | Track changes |
 
+### PowerPoint and Word
+
+Each app gets its own tab, its own colour, its own list, and its own on/off
+switch. Turning something off in Excel leaves PowerPoint and Word exactly as
+they were.
+
+<div align="center">
+
+<img src="docs/screenshot-powerpoint.png" width="49%" alt="CobAlt Shortcut Manager, PowerPoint tab">
+<img src="docs/screenshot-word.png" width="49%" alt="CobAlt Shortcut Manager, Word tab">
+
+</div>
+
 ## Custom shortcuts
 
 Three ways to bind a sequence, all from the Shortcut Manager:
@@ -118,7 +127,18 @@ bash build/build-app.sh        # build + sign + DMG, as CI does (macOS only)
 ## Known limitations
 
 - **Not notarized** — expect one "Open Anyway" on first launch, and Accessibility must be re-granted after updates. Both disappear with an Apple Developer ID certificate.
-- **Menu bar icon** doesn't render on some systems: macOS reports the item as created but never lays it out. The app is fully usable from its window and Dock icon.
+
+## Feedback
+
+Ratings and comments go through the app itself — **Shortcut Manager → Feedback**.
+Comments are emailed privately; only the average rating and the number of
+ratings are ever shown.
+
+<div align="center">
+
+<img src="docs/screenshot-feedback.png" width="700" alt="The Feedback tab in the CobAlt Shortcut Manager">
+
+</div>
 
 ## License
 

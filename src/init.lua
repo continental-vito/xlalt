@@ -232,7 +232,7 @@ local function sendFeedback(rating, comment, contact)
     osver = string.format("macOS %d.%d.%d", v.major or 0, v.minor or 0, v.patch or 0)
   end)
   local stars = string.rep("★", math.max(1, math.min(5, tonumber(rating) or 5)))
-  local subject = string.format("[XL feedback] %s (%s/5)", stars, tostring(rating))
+  local subject = string.format("[CobAlt feedback] %s (%s/5)", stars, tostring(rating))
   local body = table.concat({
     "Rating: " .. tostring(rating) .. "/5",
     "",
@@ -242,7 +242,7 @@ local function sendFeedback(rating, comment, contact)
     "Reply to: " .. ((contact ~= nil and #contact > 0) and contact or "(not provided)"),
     "",
     "---",
-    "XL version " .. ExcelAlt.version .. "  " .. osver,
+    "CobAlt version " .. ExcelAlt.version .. "  " .. osver,
   }, "\n")
 
   local url = string.format("mailto:%s?subject=%s&body=%s",
@@ -1188,7 +1188,7 @@ nav.tabs button.on { background:var(--paper); color:var(--accent); }
     <div><div class="big" id="st-c">–</div><div class="lbl">comments</div></div>
   </div>
   <div class="fbwrap">
-    <h2>How is XL working for you?</h2>
+    <h2>How is CobAlt working for you?</h2>
     <p class="sub">Bug reports, missing shortcuts, and ideas all welcome.</p>
     <div class="stars" id="stars">
       <span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span>
@@ -1370,7 +1370,7 @@ function pageHTML(a) {
       '<a onclick="showPage(\'help\')">See How to use →</a></p>' +
     '<table><thead><tr><th>Sequence</th><th>Action</th><th>Command</th><th></th><th></th><th></th></tr></thead>' +
     '<tbody id="rows-' + id + '"></tbody></table>' +
-    '<p class="fblink">Using XL every day? <a onclick="showPage(\'fb\')">Tell me what you think →</a></p>' +
+    '<p class="fblink">Using CobAlt every day? <a onclick="showPage(\'fb\')">Tell me what you think →</a></p>' +
   '</main>';
 }
 
