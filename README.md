@@ -33,7 +33,7 @@ Office's ribbon shortcuts are muscle memory for anyone who learned these apps on
 3. Grant **Accessibility** when the app asks. Shortcuts activate immediately.
 4. Open Excel, tap **⌥**, start typing sequences.
 
-Updates after that arrive in-app: **ExcelAlt → Check for Updates**.
+Updates after that arrive in-app: **CobAlt → Check for Updates**.
 
 ## Screenshots
 
@@ -118,7 +118,6 @@ bash build/build-app.sh        # build + sign + DMG, as CI does (macOS only)
 ## Known limitations
 
 - **Not notarized** — expect one "Open Anyway" on first launch, and Accessibility must be re-granted after updates. Both disappear with an Apple Developer ID certificate.
-- **Menu bar icon** doesn't render on some systems: macOS reports the item as created but never lays it out. The app is fully usable from its window and Dock icon.
 
 ## License
 
