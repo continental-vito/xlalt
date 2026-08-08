@@ -106,8 +106,23 @@ fi
 # data, so both can run at once — but two engines both watching Excel would
 # double-fire every shortcut, so quit the release app while you test.
 echo "→ Stopping any running dev build"
-pkill -f "ExcelAlt-dev.app" 2>/dev/null || true
-sleep 1
+# Derived from the paths, never spelled out. This was the literal string
+# "ExcelAlt-dev.app" and stayed that way when the dev bundle was renamed
+# to CobAlt-dev.app, so it stopped matching anything: the old process kept
+# running, `open` merely brought it to the front, and every rebuild looked
+# like it had changed nothing while the bundle on disk was perfectly
+# up to date.
+pkill -f "$DEV_APP" 2>/dev/null || true
+pkill -f "$OLD_DEV_APP" 2>/dev/null || true
+for _ in 1 2 3 4 5; do
+  pgrep -f "$DEV_APP" >/dev/null 2>&1 || break
+  sleep 0.4
+done
+if pgrep -f "$DEV_APP" >/dev/null 2>&1; then
+  echo "   the previous dev build is still running; forcing it" >&2
+  pkill -9 -f "$DEV_APP" 2>/dev/null || true
+  sleep 1
+fi
 
 if [ -n "$RESET_TCC" ]; then
   echo "→ Clearing the dev build's Accessibility grant (you will be re-prompted)"
