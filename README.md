@@ -27,15 +27,6 @@ Tap the **⌥ Option** key, then type the sequence you already know from Windows
 
 Office's ribbon shortcuts are muscle memory for anyone who learned these apps on Windows — and they simply don't exist on the Mac. CobAlt brings them back across **Excel, PowerPoint and Word**: one tap of Option enters sequence mode, a KeyTips panel shows what's available as you type, and the built-in sequences map to real actions in whichever app is in front. Each app keeps its own list, its own colour, and its own on/off switch. Add your own with keystrokes, menu paths, or AppleScript.
 
-## Install
-
-1. **[Download CobAlt.dmg](https://github.com/continental-vito/xlalt/releases/latest/download/CobAlt.dmg)**, open it, drag **CobAlt** into Applications.
-2. Open it. First launch only: macOS blocks apps that aren't notarized — go to **System Settings → Privacy &amp; Security** and click **Open Anyway**.
-3. Grant **Accessibility** when the app asks. Shortcuts activate immediately.
-4. Open Excel, tap **⌥**, start typing sequences.
-
-Updates after that arrive in-app: the menu bar icon → **Check for Updates**, or **Settings**.
-
 ## See it work
 
 <div align="center">
@@ -54,6 +45,23 @@ The Shortcut Manager — search, edit and add shortcuts, with every command visi
 <img src="docs/screenshot-word.png" width="33%" alt="CobAlt Shortcut Manager, Word tab">
 
 <sub>Each app has its own tab, colour, list and on/off switch — turning something off in Excel leaves PowerPoint and Word exactly as they were.</sub>
+
+</div>
+
+## How to install
+
+1. **[Download CobAlt.dmg](https://github.com/continental-vito/xlalt/releases/latest/download/CobAlt.dmg)**, open it, drag **CobAlt** into Applications.
+2. Open it. First launch only: macOS blocks apps that aren't notarized — go to **System Settings → Privacy &amp; Security** and click **Open Anyway**.
+3. Grant **Accessibility** when the app asks. Shortcuts activate immediately.
+4. Open Excel, tap **⌥**, start typing sequences.
+
+Updates after that arrive in-app: the menu bar icon → **Check for Updates**, or **Settings**.
+
+<div align="center">
+
+<img src="docs/install-guide.gif" width="780" alt="Downloading CobAlt, allowing it in Privacy &amp; Security, and granting Accessibility">
+
+<sub>The whole thing, start to finish — including the two macOS prompts.</sub>
 
 </div>
 
