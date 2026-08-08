@@ -43,7 +43,9 @@ Updates after that arrive in-app: the menu bar icon → **Check for Updates**, o
 
 <sub>Tap <b>⌥</b>, the KeyTips panel appears, type the sequence — the action runs.</sub>
 
-<br><br>
+<br>
+
+Every sequence lives in one window — searchable, editable, and yours to add to.
 
 <img src="docs/screenshot-excel.png" width="780" alt="CobAlt Shortcut Manager, Excel tab">
 
@@ -53,7 +55,18 @@ Updates after that arrive in-app: the menu bar icon → **Check for Updates**, o
 
 ## Shortcuts
 
-The same sequence can mean different things in different apps, and the KeyTips panel always says which app it is driving. A selection of what ships built in — all editable and searchable:
+The same sequence can mean different things in different apps, and the KeyTips panel always says which app it is driving.
+
+<div align="center">
+
+<img src="docs/screenshot-powerpoint.png" width="49%" alt="CobAlt Shortcut Manager, PowerPoint tab">
+<img src="docs/screenshot-word.png" width="49%" alt="CobAlt Shortcut Manager, Word tab">
+
+<sub>Each app has its own tab, colour, list and on/off switch — turning something off in Excel leaves PowerPoint and Word exactly as they were.</sub>
+
+</div>
+
+A selection of what ships built in — all editable and searchable:
 
 **Excel**
 
@@ -87,19 +100,6 @@ The same sequence can mean different things in different apps, and the KeyTips p
 | `H F G` / `H F K` | Grow / shrink font | `N F` | Footnote |
 | `H X` / `H B` | Superscript / subscript | `R C` | New comment |
 | `H A J` | Justify | `R T` | Track changes |
-
-### PowerPoint and Word
-
-Each app gets its own tab, its own colour, its own list, and its own on/off
-switch. Turning something off in Excel leaves PowerPoint and Word exactly as
-they were.
-
-<div align="center">
-
-<img src="docs/screenshot-powerpoint.png" width="49%" alt="CobAlt Shortcut Manager, PowerPoint tab">
-<img src="docs/screenshot-word.png" width="49%" alt="CobAlt Shortcut Manager, Word tab">
-
-</div>
 
 ## Custom shortcuts
 
