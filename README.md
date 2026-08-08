@@ -7,6 +7,7 @@
 **Windows Alt shortcuts for Excel, PowerPoint and Word on Mac.**
 
 Tap the **⌥ Option** key, then type the sequence you already know from Windows.
+
 `H O I` autofits in Excel · `H I` adds a slide in PowerPoint · `H S 2` applies Heading 2 in Word
 
 ### [⬇ Download for macOS](https://github.com/continental-vito/xlalt/releases/latest/download/CobAlt.dmg)
