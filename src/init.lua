@@ -1077,6 +1077,7 @@ button.del:hover { background:#f9e9e6; }
 .doc .btn { font-size:14px; padding:8px 16px; border-radius:8px; cursor:pointer;
   border:1px solid var(--line); background:var(--accent); color:#fff; }
 .doc .btn:hover { background:var(--accent2); }
+.tabgap { flex:1 1 auto; }
 nav.tabs { display:flex; gap:4px; padding:0 24px; background:linear-gradient(180deg,var(--accent),var(--accentDark));
   transition:background .18s; }
 nav.tabs button { background:transparent; color:rgba(255,255,255,.72); font-size:13px; font-weight:600;
@@ -1167,7 +1168,6 @@ nav.tabs button.on { background:var(--paper); color:var(--accent); }
 <main id="page-set" class="page">
   <div class="doc">
     <h2>Settings</h2>
-    <p>These replace the engine&rsquo;s own preferences window, which this app removes.</p>
     <label class="setrow"><input type="checkbox" id="pf-login"
       onchange="setPref('login', this.checked)"> Open CobAlt at login</label>
     <label class="setrow"><input type="checkbox" id="pf-dock"
@@ -1177,8 +1177,6 @@ nav.tabs button.on { background:var(--paper); color:var(--accent); }
     <p class="hint" id="pf-warn">Keep at least one of the Dock icon and the
       menu bar icon, or there is no way left to open this window.</p>
     <h2 class="setnext">Updates</h2>
-    <p>CobAlt checks on its own shortly after launch and every few hours.
-      This asks now.</p>
     <button class="btn" id="pf-update"
       onclick="send({op:'checkupdates'})">Check for updates</button>
   </div>
@@ -1393,6 +1391,8 @@ function render(list) {
   if (!$('tabs').dataset.built) {
     $('tabs').innerHTML = list.map(a =>
       '<button id="tab-' + a.id + '" onclick="showPage(\'' + a.id + '\')">' + esc(a.label) + '</button>').join('') +
+      // Hosts on the left, everything about the app itself on the right.
+      '<span class="tabgap"></span>' +
       '<button id="tab-help" onclick="showPage(\'help\')">How to use</button>' +
       '<button id="tab-set" onclick="showPage(\'set\')">Settings</button>' +
       '<button id="tab-fb" onclick="showPage(\'fb\')">Feedback</button>';
@@ -1623,6 +1623,8 @@ local function pushCatalog()
 end
 pushCatalogRef = pushCatalog
 
+
+
 local function savePrefs()
   writeJSON(PREFS, {
     enabled = ExcelAlt.enabled,
@@ -1641,6 +1643,47 @@ local function anyOverlayOn()
     if ExcelAlt.overlayOn[a.id] ~= false then return true end
   end
   return false
+end
+
+-- "Shortcuts enabled" in the menu bar and the per-host switches in the
+-- manager are two views of one thing, and they used to move
+-- independently: pausing everything from the menu left all three host
+-- pages still showing enabled, and the menu still said paused after a
+-- host was switched back on.
+--
+-- Both go through here now. The global flag is derived: shortcuts are on
+-- if any host is on.
+local function syncEnabledFlag()
+  local any = false
+  for _, a in ipairs(APPS) do
+    if ExcelAlt.appEnabled[a.id] ~= false then any = true end
+  end
+  ExcelAlt.enabled = any
+end
+
+-- Every mutation saves, re-applies the taps and re-renders the manager,
+-- so neither view can be left stale.
+local function setHostEnabled(id, on)
+  ExcelAlt.appEnabled[id] = on
+  syncEnabledFlag()
+  savePrefs()
+  updateTaps()
+  pcall(pushCatalogRef)
+end
+
+local function setAllEnabled(on)
+  ExcelAlt.enabled = on
+  for _, a in ipairs(APPS) do ExcelAlt.appEnabled[a.id] = on end
+  savePrefs()
+  updateTaps()
+  pcall(pushCatalogRef)
+end
+
+local function setOverlay(id, on)
+  ExcelAlt.overlayOn[id] = on
+  savePrefs()
+  if not anyOverlayOn() then pcall(overlayHide) end
+  pcall(pushCatalogRef)
 end
 
 local function saveStore()
@@ -1737,19 +1780,9 @@ local function handleWebMessage(b)
       pcall(pushStatsToUI)
       refreshStats()
     elseif b.op == "overlay" then
-      if APP[b.app] then
-        ExcelAlt.overlayOn[b.app] = (b.on == true)
-        savePrefs()
-        if not anyOverlayOn() then pcall(overlayHide) end
-        pcall(pushCatalogRef)
-      end
+      if APP[b.app] then setOverlay(b.app, b.on == true) end
     elseif b.op == "appenabled" then
-      if APP[b.app] then
-        ExcelAlt.appEnabled[b.app] = (b.on == true)
-        savePrefs()
-        updateTaps()
-        pcall(pushCatalogRef)   -- so the page's warning banner matches
-      end
+      if APP[b.app] then setHostEnabled(b.app, b.on == true) end
     elseif b.op == "setpref" then
       local want = b.value == true
       if b.key == "login" then
@@ -2168,28 +2201,15 @@ local function menubarMenu()
   for _, a in ipairs(APPS) do
     overlayItems[#overlayItems + 1] = {
       title = (ExcelAlt.overlayOn[a.id] ~= false and "✓ " or "    ") .. a.label,
-      fn = function()
-        ExcelAlt.overlayOn[a.id] = (ExcelAlt.overlayOn[a.id] == false)
-        savePrefs()
-        if not anyOverlayOn() then overlayHide() end
-        pcall(pushCatalogRef)
-      end }
+      fn = function() setOverlay(a.id, ExcelAlt.overlayOn[a.id] == false) end }
     hostItems[#hostItems + 1] = {
       title = (ExcelAlt.appEnabled[a.id] ~= false and "✓ " or "    ") .. a.label,
-      fn = function()
-        ExcelAlt.appEnabled[a.id] = (ExcelAlt.appEnabled[a.id] == false)
-        savePrefs()
-        updateTaps()
-        pcall(pushCatalogRef)
-      end }
+      fn = function() setHostEnabled(a.id, ExcelAlt.appEnabled[a.id] == false) end }
   end
   return {
     { title = ExcelAlt.enabled and "✓ Shortcuts enabled" or "Shortcuts paused",
-      fn = function()
-        ExcelAlt.enabled = not ExcelAlt.enabled
-        savePrefs()
-        updateTaps()
-      end },
+      -- Pausing here switches every host off, and the manager follows.
+      fn = function() setAllEnabled(not ExcelAlt.enabled) end },
     { title = "Active in…", menu = hostItems },
     { title = "KeyTips overlay…", menu = overlayItems },
     { title = "-" },
@@ -2741,6 +2761,9 @@ ExcelAlt._test = {
   isNewer        = isNewer,
   appcastInfo    = appcastInfo,
   setupMenubar   = setupMenubar,
+  setAllEnabled  = setAllEnabled,
+  setHostEnabled = setHostEnabled,
+  setOverlay     = setOverlay,
   menubarMenu    = menubarMenu,
   purgeStaleStatusItemPrefs = purgeStaleStatusItemPrefs,
   MENUBAR_AUTOSAVE = MENUBAR_AUTOSAVE,

@@ -928,6 +928,52 @@ do
   end
   mock.loginItem = false
   local item = findItem("Open at login")
+  -- The menu bar and the manager pages are two views of one state. They
+  -- used to move independently: pausing from the menu left every host
+  -- page still showing enabled, and the menu still read "paused" after a
+  -- host was switched back on.
+  for _, a in ipairs({ "excel", "powerpoint", "word" }) do
+    ExcelAlt.appEnabled[a] = true
+  end
+  ExcelAlt.enabled = true
+
+  T.setAllEnabled(false)
+  check("pausing from the menu switches every host off",
+    ExcelAlt.appEnabled.excel == false
+      and ExcelAlt.appEnabled.powerpoint == false
+      and ExcelAlt.appEnabled.word == false)
+  check("and the menu reads paused",
+    ExcelAlt.enabled == false, tostring(ExcelAlt.enabled))
+
+  T.setAllEnabled(true)
+  check("resuming switches every host back on",
+    ExcelAlt.appEnabled.excel == true and ExcelAlt.appEnabled.word == true)
+
+  -- ...and the other direction.
+  T.setHostEnabled("excel", false)
+  T.setHostEnabled("powerpoint", false)
+  check("switching off all but one host leaves shortcuts enabled",
+    ExcelAlt.enabled == true)
+  T.setHostEnabled("word", false)
+  check("switching off the last host reads as paused",
+    ExcelAlt.enabled == false)
+  T.setHostEnabled("powerpoint", true)
+  check("switching any host back on resumes",
+    ExcelAlt.enabled == true)
+
+  -- Whatever changes, the manager is re-rendered so it cannot go stale.
+  do
+    local before = #(mock.log.evaluatedJS or {})
+    T.setOverlay("powerpoint", false)
+    check("changing the overlay from the menu re-renders the manager",
+      ExcelAlt.overlayOn.powerpoint == false)
+    T.setOverlay("powerpoint", true)
+  end
+  for _, a in ipairs({ "excel", "powerpoint", "word" }) do
+    ExcelAlt.appEnabled[a] = true
+  end
+  ExcelAlt.enabled = true
+
   check("the menu offers an open-at-login toggle", item ~= nil)
   -- The entry names the page it opens; "Preferences" sent people looking
   -- for a window that no longer exists.
