@@ -129,7 +129,7 @@ ratings are ever shown.
 
 <div align="center">
 
-<img src="docs/screenshot-feedback.png" width="700" alt="The Feedback tab in the CobAlt Shortcut Manager">
+<img src="docs/CobAlt_Feedback.png" width="700" alt="The Feedback tab in the CobAlt Shortcut Manager">
 
 </div>
 
