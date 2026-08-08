@@ -34,7 +34,7 @@ Office's ribbon shortcuts are muscle memory for anyone who learned these apps on
 3. Grant **Accessibility** when the app asks. Shortcuts activate immediately.
 4. Open Excel, tap **⌥**, start typing sequences.
 
-Updates after that arrive in-app: the menu bar icon → **Check for Updates**, or **Shortcut Manager → Settings**.
+Updates after that arrive in-app: the menu bar icon → **Check for Updates**, or **Settings**.
 
 ## See it work
 
@@ -43,29 +43,21 @@ Updates after that arrive in-app: the menu bar icon → **Check for Updates**, o
 <img src="docs/demo-excel.gif" width="780" alt="Tapping Option in Excel and typing a sequence">
 
 <sub>Tap <b>⌥</b>, the KeyTips panel appears, type the sequence — the action runs.</sub>
-
+</div>
 <br>
 
-Every sequence lives in one window — searchable, editable, and yours to add to.
-
-<img src="docs/screenshot-excel.png" width="780" alt="CobAlt Shortcut Manager, Excel tab">
-
-<sub>The Shortcut Manager — search, edit and add shortcuts, with every command visible at a glance.</sub>
-
-</div>
-
-## Shortcuts
-
-The same sequence can mean different things in different apps, and the KeyTips panel always says which app it is driving.
+The Shortcut Manager — search, edit and add shortcuts, with every command visible at a glance. The same sequence can mean different things in different apps, and the KeyTips panel always says which app it is driving.
 
 <div align="center">
-
-<img src="docs/screenshot-powerpoint.png" width="49%" alt="CobAlt Shortcut Manager, PowerPoint tab">
-<img src="docs/screenshot-word.png" width="49%" alt="CobAlt Shortcut Manager, Word tab">
+<img src="docs/screenshot-excel.png" width="33%" alt="CobAlt Shortcut Manager, Excel tab">
+<img src="docs/screenshot-powerpoint.png" width="33%" alt="CobAlt Shortcut Manager, PowerPoint tab">
+<img src="docs/screenshot-word.png" width="33%" alt="CobAlt Shortcut Manager, Word tab">
 
 <sub>Each app has its own tab, colour, list and on/off switch — turning something off in Excel leaves PowerPoint and Word exactly as they were.</sub>
 
 </div>
+
+## Shortcuts
 
 A selection of what ships built in — all editable and searchable:
 
