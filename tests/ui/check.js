@@ -263,6 +263,22 @@ check('a tutorial entry with a URL renders a player',
   help2.querySelector('video').getAttribute('src') === 'https://example.test/a.mp4');
 check('tutorial titles and captions are shown',
   /Getting started/.test(help2.textContent) && /First run/.test(help2.textContent));
+// A card without a URL is the "coming soon" placeholder. Both real
+// tutorials have recordings now, so the placeholder should never appear
+// for them -- it is only correct while a recording is genuinely pending.
+w.setTutorial([
+  { title: 'Sequences in Excel, PowerPoint and Word', caption: 'All three apps.',
+    url: 'https://example.test/sequences.mp4' },
+  { title: 'Making your own shortcuts', caption: 'Adding and editing.',
+    url: 'https://example.test/add-shortcuts.mp4' },
+]);
+w.renderHelp();
+const help3 = d.getElementById('help-body');
+check('every tutorial renders a player, none a placeholder',
+  help3.querySelectorAll('video').length === 2 &&
+  help3.querySelectorAll('.soon').length === 0,
+  help3.querySelectorAll('video').length + ' videos, ' +
+  help3.querySelectorAll('.soon').length + ' placeholders');
 
 // -------------------------------------------------------------- escaping
 d.getElementById('search-excel').value = '';

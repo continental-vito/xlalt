@@ -82,19 +82,19 @@ local APPS = {
 -- so the layout is right before the recordings exist. Order here is the
 -- order on the page.
 -- ---------------------------------------------------------------------
+-- Videos are served from the repo rather than bundled: two clips would
+-- add a megabyte and a half to every download for something most people
+-- watch once.
+local VIDEO = "https://raw.githubusercontent.com/continental-vito/xlalt/main/docs/video/"
+
 local TUTORIAL = {
-  { title = "Getting started",
-    caption = "Installing CobAlt, granting Accessibility, and your first sequence.",
-    url = "" },
-  { title = "Sequences in Excel",
-    caption = "Tap ⌥, watch the KeyTips panel, and run the built-in Excel shortcuts.",
-    url = "" },
-  { title = "PowerPoint and Word",
-    caption = "The same key sequences across all three apps, and switching between them.",
-    url = "" },
+  { title = "Sequences in Excel, PowerPoint and Word",
+    caption = "Tap ⌥, watch the KeyTips panel, and run the built-in shortcuts "
+              .. "across all three apps.",
+    url = VIDEO .. "sequences.mp4" },
   { title = "Making your own shortcuts",
     caption = "Adding, editing and removing shortcuts in the Shortcut Manager.",
-    url = "" },
+    url = VIDEO .. "add-shortcuts.mp4" },
 }
 
 local APP = {}          -- id -> app record
@@ -2761,6 +2761,7 @@ ExcelAlt._test = {
   isNewer        = isNewer,
   appcastInfo    = appcastInfo,
   setupMenubar   = setupMenubar,
+  tutorial       = TUTORIAL,
   setAllEnabled  = setAllEnabled,
   setHostEnabled = setHostEnabled,
   setOverlay     = setOverlay,

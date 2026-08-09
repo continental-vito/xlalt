@@ -974,7 +974,28 @@ do
   end
   ExcelAlt.enabled = true
 
-  check("the menu offers an open-at-login toggle", item ~= nil)
+  -- Every tutorial now has a recording, so none should be rendering the
+-- "coming soon" placeholder, and each URL must point at a file that is
+-- actually in the repo.
+do
+  local seen = {}
+  for _, t in ipairs(T.tutorial or {}) do
+    check("tutorial has a video: " .. t.title,
+      type(t.url) == "string" and t.url ~= "", t.title)
+    local name = (t.url or ""):match("([^/]+%.mp4)$")
+    check("and it names an mp4: " .. t.title, name ~= nil, t.url)
+    if name then
+      local f = io.open("docs/video/" .. name, "r")
+      check("and that file is in the repo: " .. name, f ~= nil)
+      if f then f:close() end
+      seen[name] = true
+    end
+  end
+  check("both recordings are referenced",
+    seen["sequences.mp4"] and seen["add-shortcuts.mp4"])
+end
+
+check("the menu offers an open-at-login toggle", item ~= nil)
   -- The entry names the page it opens; "Preferences" sent people looking
   -- for a window that no longer exists.
   check("the menu entry is called Settings, matching the page",
